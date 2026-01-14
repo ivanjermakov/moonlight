@@ -2,7 +2,7 @@ import './index.css'
 
 const workgroupSize = [8, 8]
 const resolution = [100, 100]
-const format: GPUTextureFormat = 'rgba8unorm'
+const formatCanvas: GPUTextureFormat = 'rgba8unorm'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -32,7 +32,7 @@ const main = async (): Promise<void> => {
     canvas = document.getElementById('canvas') as HTMLCanvasElement
     ctx = canvas.getContext('webgpu')!
     console.debug(ctx)
-    ctx.configure({ device, format, alphaMode: 'premultiplied' })
+    ctx.configure({ device, format: formatCanvas, alphaMode: 'premultiplied' })
 
     const resize = () => {
         const dpr = window.devicePixelRatio
@@ -79,8 +79,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     computeOutputTexture = device.createTexture({
         size: [resolution[0], resolution[1], 1],
-        format,
-        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
+        format: 'rgba32float',
+        usage:
+            GPUTextureUsage.STORAGE_BINDING |
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.COPY_SRC
     })
 
     computeBindGroup = device.createBindGroup({
@@ -109,8 +113,8 @@ const initRender = async () => {
 
     const renderModule = device.createShaderModule({
         code: wgsl`
-// @group(0) @binding(0) var computeTexture: texture_2d<f32>;
-// @group(0) @binding(1) var computeSampler: sampler;
+@group(0) @binding(0) var computeTexture: texture_2d<f32>;
+@group(0) @binding(1) var computeSampler: sampler;
 
 struct VertexOut {
     @builtin(position) pos: vec4f,
@@ -125,13 +129,20 @@ fn mainVertex(@location(0) position: vec2f) -> VertexOut {
 @fragment
 fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
     let uv = vout.uv.xy * .5 + .5;
-    return vec4f(uv.xy, 0., 1.);
+    return textureSample(computeTexture, computeSampler, uv);
 }
 `
     })
 
+    const layout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } }
+        ]
+    })
+
     renderPipeline = await device.createRenderPipelineAsync({
-        layout: 'auto',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
         vertex: {
             module: renderModule,
             entryPoint: 'mainVertex',
@@ -153,17 +164,22 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
         fragment: {
             module: renderModule,
             entryPoint: 'mainFragment',
-            targets: [{ format }]
+            targets: [{ format: formatCanvas }]
         },
         primitive: { topology: 'triangle-list' }
     })
 
-    const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
+    const sampler = device.createSampler({
+        magFilter: 'nearest',
+        minFilter: 'nearest',
+        addressModeU: 'repeat',
+        addressModeV: 'repeat'
+    })
     renderBindGroup = device.createBindGroup({
-        layout: renderPipeline.getBindGroupLayout(0),
+        layout: layout,
         entries: [
-            // { binding: 0, resource: computeOutputTexture.createView() },
-            // { binding: 1, resource: sampler }
+            { binding: 0, resource: computeOutputTexture.createView() },
+            { binding: 1, resource: sampler }
         ]
     })
 }
