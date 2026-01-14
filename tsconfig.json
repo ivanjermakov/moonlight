@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "@webgpu/types"],
     "moduleResolution": "bundler",
     "noEmit": true,
     "strict": true,

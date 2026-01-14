@@ -8,8 +8,9 @@
         "build": "tsgo && vite build"
     },
     "devDependencies": {
-        "typescript": "5.9.3",
         "@typescript/native-preview": "7.0.0-dev.20251213.1",
+        "@webgpu/types": "^0.1.69",
+        "typescript": "5.9.3",
         "vite": "7.2.4"
     }
 }
