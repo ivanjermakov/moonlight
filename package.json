@@ -1,0 +1,15 @@
+{
+    "name": "moonlight",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "start": "vite",
+        "build": "tsgo && vite build"
+    },
+    "devDependencies": {
+        "typescript": "5.9.3",
+        "@typescript/native-preview": "7.0.0-dev.20251213.1",
+        "vite": "7.2.4"
+    }
+}

@@ -1,0 +1,54 @@
+{
+    "$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
+    "formatter": {
+        "lineWidth": 120,
+        "indentStyle": "space",
+        "indentWidth": 4
+    },
+    "linter": {
+        "rules": {
+            "recommended": true,
+            "correctness": {
+                "noSwitchDeclarations": "off",
+                "noUnusedImports": "warn"
+            },
+            "suspicious": {
+                "noConsoleLog": "warn",
+                "noExplicitAny": "off",
+                "noShadowRestrictedNames": "off",
+                "noConfusingVoidType": "off",
+                "noThenProperty": "off",
+                "noAssignInExpressions": "off"
+            },
+            "complexity": {
+                "noForEach": "off"
+            },
+            "style": {
+                "noNonNullAssertion": "off",
+                "noUnusedTemplateLiteral": "off",
+                "noInferrableTypes": "off",
+                "noUselessElse": "off",
+                "useTemplate": "off",
+                "noParameterAssign": "off",
+                "noDefaultExport": "warn",
+                "noNamespace": "warn",
+                "useNamingConvention": "off",
+                "useImportType": "off",
+                "useNodejsImportProtocol": "off"
+            },
+            "a11y": {
+                "useValidAnchor": "off",
+                "useMediaCaption": "off",
+                "useKeyWithClickEvents": "off"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "trailingComma": "none",
+            "semicolons": "asNeeded",
+            "arrowParentheses": "asNeeded"
+        }
+    }
+}
