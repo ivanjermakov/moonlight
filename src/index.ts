@@ -1,9 +1,9 @@
 import './index.css'
 
 const workgroupSize = [8, 8]
-const formatComputeTexture: GPUTextureFormat = 'rgba16float'
-const renderScale = 8
+const renderScale = 1 / 8
 const computeOutputTextureSize = 4096
+const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -47,7 +47,7 @@ const main = async (): Promise<void> => {
         const dpr = window.devicePixelRatio
         canvas.width = window.innerWidth * dpr
         canvas.height = window.innerHeight * dpr
-        resolution = [canvas.width / renderScale, canvas.height / renderScale]
+        resolution = [canvas.width * renderScale, canvas.height * renderScale]
         console.debug('resize', [canvas.width, canvas.height], resolution)
     }
     window.addEventListener('resize', resize)
@@ -78,17 +78,30 @@ struct Uniforms {
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
-  let uv = vec3f(gid).xy / uniforms.outSize;
-  textureStore(out, gid.xy, vec4f(uv, 0., 1.));
-  // if gid.x == 0 || gid.y == 0 || gid.x == u32(uniforms.outSize.x) - 1 || gid.y == u32(uniforms.outSize.y) - 1 {
-  //     textureStore(out, gid.xy, vec4f(1., 0., .0, 1.));
-  // } else if (gid.x + gid.y) % 2 == 0 {
-  //     textureStore(out, gid.xy, vec4f(0., 0., .5, 1.));
-  // } else {
-  //     textureStore(out, gid.xy, vec4f(1., 1., 1., 1.));
-  // }
+  let pixelPos = vec3f(gid).xy;
+  // let outColor = outUv(pixelPos);
+  let outColor = outCheckerboard(pixelPos);
+  textureStore(out, gid.xy, outColor);
+}
+
+fn outUv(pixelPos: vec2f) -> vec4f {
+    let uv = pixelPos / uniforms.outSize;
+    return vec4f(uv, 0., 1.);
+}
+
+fn outCheckerboard(pixelPos: vec2f) -> vec4f {
+    if pixelPos.x < 1 ||
+       pixelPos.y < 1 ||
+       pixelPos.x > uniforms.outSize.x - 2 ||
+       pixelPos.y > uniforms.outSize.y - 2 {
+        return vec4f(1, 0, 0, 1);
+    } else if (pixelPos.x + pixelPos.y) % 2 == 0 {
+        return vec4f(0, 0, .5, 1);
+    } else {
+        return vec4f(1, 1, 1, 1);
+    }
 }
 `
     })
@@ -96,7 +109,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // needed because rgba16float is not the default choice for storage textures
     const layout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: formatComputeTexture } },
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: computeOutputTextureFormat } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
         ]
     })
@@ -113,7 +126,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     computeOutputTexture = device.createTexture({
         size: [computeOutputTextureSize, computeOutputTextureSize, 1],
-        format: formatComputeTexture,
+        format: computeOutputTextureFormat,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     })
 
