@@ -10,21 +10,22 @@ const wgsl = String.raw
 
 const shaders = wgsl`
 struct VertexOut {
-    @builtin(position) position: vec4f,
-    @location(0) color: vec4f
-}
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>
+};
 
 @vertex
-fn mainVertex(@location(0) position: vec4f, @location(1) color: vec4f) -> VertexOut {
-    var output : VertexOut;
-    output.position = position;
-    output.color = color;
-    return output;
+fn mainVertex(@location(0) position: vec2f) -> VertexOut {
+    var out: VertexOut;
+    out.pos = vec4f(position, 0., 1.);
+    out.uv = position;
+    return out;
 }
 
 @fragment
-fn mainFragment(fragData: VertexOut) -> @location(0) vec4f {
-    return fragData.color;
+fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
+    let uv = vout.uv.xy * .5 + .5;
+    return vec4f(uv.xy, 0., 1.);
 }
 `
 
@@ -57,19 +58,21 @@ const main = async (): Promise<void> => {
     const shaderModule = device.createShaderModule({ code: shaders })
 
     // biome-ignore format:
-    // x, y, z, w, r, g, b, a
-    const vertices = new Float32Array([
-         0.0,  0.6, 0, 1,   1, 0, 0, 1,
-        -0.5, -0.6, 0, 1,   0, 1, 0, 1,
-         0.5, -0.6, 0, 1,   0, 0, 1, 1
+    const clipPlane = new Float32Array([
+         -1, -1,
+          1,  1,
+         -1,  1,
+         -1, -1,
+          1, -1,
+          1,  1,
     ])
 
     vertexBuffer = device.createBuffer({
-        size: vertices.byteLength,
+        size: clipPlane.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     })
 
-    device.queue.writeBuffer(vertexBuffer, 0, vertices, 0, vertices.length)
+    device.queue.writeBuffer(vertexBuffer, 0, clipPlane, 0, clipPlane.length)
 
     renderPipeline = await device.createRenderPipelineAsync({
         vertex: {
@@ -82,16 +85,10 @@ const main = async (): Promise<void> => {
                             // position
                             shaderLocation: 0,
                             offset: 0,
-                            format: 'float32x4'
-                        },
-                        {
-                            // color
-                            shaderLocation: 1,
-                            offset: 16,
-                            format: 'float32x4'
+                            format: 'float32x2'
                         }
                     ],
-                    arrayStride: 32,
+                    arrayStride: 8,
                     stepMode: 'vertex'
                 }
             ]
@@ -134,7 +131,7 @@ const draw = () => {
     })
     passEncoder.setPipeline(renderPipeline)
     passEncoder.setVertexBuffer(0, vertexBuffer)
-    passEncoder.draw(3)
+    passEncoder.draw(6)
     passEncoder.end()
     device.queue.submit([commandEncoder.finish()])
 }
