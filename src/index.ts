@@ -1,8 +1,9 @@
 import './index.css'
 
 const workgroupSize = [8, 8]
-const resolution = [100, 100]
+const resolution = [10, 10]
 const formatCanvas: GPUTextureFormat = 'rgba8unorm'
+const formatComputeTexture: GPUTextureFormat = 'rgba16float'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -45,8 +46,8 @@ const main = async (): Promise<void> => {
     await initCompute()
     await initRender()
 
-    // requestAnimationFrame(loop)
-    await update()
+    requestAnimationFrame(loop)
+    // await update()
 }
 
 const initDevice = async (): Promise<GPUDevice | undefined> => {
@@ -58,37 +59,37 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
 const initCompute = async () => {
     const computeModule = device.createShaderModule({
         code: wgsl`
-const resolution = vec2u(100, 100);
+const resolution = vec2u(${resolution.join(',')});
 
-@group(0) @binding(0) var out: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gid.x >= resolution.x || gid.y >= resolution.y) { return; }
-  let u = f32(gid.x) / f32(resolution.x - 1);
-  let v = f32(gid.y) / f32(resolution.y - 1);
-  textureStore(out, vec2<u32>(gid.x, gid.y), vec4<f32>(u, v, 0.5, 1.0));
+  let uv = vec3f(gid).xy / vec2f(resolution);
+  textureStore(out, vec2u(gid.xy), vec4<f32>(uv, 0., 1.));
 }
 `
     })
 
+    // needed because rgba16float is not the default choice for storage textures
+    const layout = device.createBindGroupLayout({
+        entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: formatComputeTexture } }]
+    })
+
     computePipeline = await device.createComputePipelineAsync({
-        layout: 'auto',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
         compute: { module: computeModule, entryPoint: 'main' }
     })
 
     computeOutputTexture = device.createTexture({
         size: [resolution[0], resolution[1], 1],
-        format: 'rgba32float',
-        usage:
-            GPUTextureUsage.STORAGE_BINDING |
-            GPUTextureUsage.TEXTURE_BINDING |
-            GPUTextureUsage.COPY_DST |
-            GPUTextureUsage.COPY_SRC
+        format: formatComputeTexture,
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     })
 
     computeBindGroup = device.createBindGroup({
-        layout: computePipeline.getBindGroupLayout(0),
+        layout,
         entries: [{ binding: 0, resource: computeOutputTexture.createView() }]
     })
 }
@@ -123,26 +124,18 @@ struct VertexOut {
 
 @vertex
 fn mainVertex(@location(0) position: vec2f) -> VertexOut {
-    return VertexOut(vec4f(position, 0., 1.), position);
+    return VertexOut(vec4f(position, 0., 1.), position * .5 + .5);
 }
 
 @fragment
 fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
-    let uv = vout.uv.xy * .5 + .5;
-    return textureSample(computeTexture, computeSampler, uv);
+    return textureSample(computeTexture, computeSampler, vout.uv);
 }
 `
     })
 
-    const layout = device.createBindGroupLayout({
-        entries: [
-            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } }
-        ]
-    })
-
     renderPipeline = await device.createRenderPipelineAsync({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        layout: 'auto',
         vertex: {
             module: renderModule,
             entryPoint: 'mainVertex',
@@ -176,7 +169,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
         addressModeV: 'repeat'
     })
     renderBindGroup = device.createBindGroup({
-        layout: layout,
+        layout: renderPipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: computeOutputTexture.createView() },
             { binding: 1, resource: sampler }
@@ -186,7 +179,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
 const loop = async () => {
     await update()
-    requestAnimationFrame(update)
+    requestAnimationFrame(loop)
 }
 
 const update = async () => {
