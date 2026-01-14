@@ -1,5 +1,5 @@
 import './index.css'
 
-document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+document.querySelector<HTMLDivElement>('#root')!.innerHTML = `
   <div>hello!</div>
-`;
+`
