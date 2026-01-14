@@ -1,8 +1,7 @@
 import './index.css'
 
 const workgroupSize = [8, 8]
-const resolution = [10, 10]
-const formatCanvas: GPUTextureFormat = 'rgba8unorm'
+const resolution = [32, 32]
 const formatComputeTexture: GPUTextureFormat = 'rgba16float'
 
 let device: GPUDevice
@@ -14,6 +13,9 @@ let computeBindGroup: GPUBindGroup
 let renderPipeline: GPURenderPipeline
 let renderBindGroup: GPUBindGroup
 let clipVertexBuffer: GPUBuffer
+let formatCanvas: GPUTextureFormat
+
+let frameStart: number = 0
 
 const wgsl = String.raw
 
@@ -22,6 +24,7 @@ const main = async (): Promise<void> => {
         alert('WebGPU is not supported')
         return
     }
+    formatCanvas = navigator.gpu.getPreferredCanvasFormat()
 
     device = (await initDevice())!
     if (!device) {
@@ -39,6 +42,7 @@ const main = async (): Promise<void> => {
         const dpr = window.devicePixelRatio
         canvas.width = window.innerWidth * dpr
         canvas.height = window.innerHeight * dpr
+        console.debug('resize', canvas.width, canvas.height)
     }
     window.addEventListener('resize', resize)
     resize()
@@ -114,6 +118,8 @@ const initRender = async () => {
 
     const renderModule = device.createShaderModule({
         code: wgsl`
+const resolution = vec2u(${resolution.join(',')});
+
 @group(0) @binding(0) var computeTexture: texture_2d<f32>;
 @group(0) @binding(1) var computeSampler: sampler;
 
@@ -189,8 +195,8 @@ const update = async () => {
     draw()
     await device.queue.onSubmittedWorkDone()
 
-    const end = performance.now()
-    document.getElementById('delta')!.innerText = (end - start).toFixed(2).padStart(5, ' ')
+    document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
+    frameStart = start
 }
 
 const compute = () => {
