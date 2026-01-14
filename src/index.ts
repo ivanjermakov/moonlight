@@ -24,6 +24,13 @@ let frameStart: number = 0
 
 const wgsl = String.raw
 
+const commons = wgsl`
+struct Uniforms {
+    outSize: vec2f,
+    renderScale: f32,
+}
+`
+
 const main = async (): Promise<void> => {
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
@@ -69,10 +76,7 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
 const initCompute = async () => {
     const computeModule = device.createShaderModule({
         code: wgsl`
-struct Uniforms {
-    outSize: vec2f,
-    renderScale: f32,
-}
+${commons}
 
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;
@@ -159,10 +163,7 @@ const initRender = async () => {
 
     const renderModule = device.createShaderModule({
         code: wgsl`
-struct Uniforms {
-    outSize: vec2f,
-    renderScale: f32,
-}
+${commons}
 
 @group(0) @binding(0) var computeTexture: texture_2d<f32>;
 @group(0) @binding(1) var computeSampler: sampler;
