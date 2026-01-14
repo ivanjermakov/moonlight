@@ -1,19 +1,24 @@
 import './index.css'
 
 const workgroupSize = [8, 8]
-const resolution = [32, 32]
 const formatComputeTexture: GPUTextureFormat = 'rgba16float'
+const renderScale = 8
+const computeOutputTextureSize = 4096
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
 let ctx: GPUCanvasContext
+let formatCanvas: GPUTextureFormat
+let resolution: [number, number]
+
 let computePipeline: GPUComputePipeline
 let computeOutputTexture: GPUTexture
 let computeBindGroup: GPUBindGroup
+let uniformBuffer: GPUBuffer
+
 let renderPipeline: GPURenderPipeline
 let renderBindGroup: GPUBindGroup
 let clipVertexBuffer: GPUBuffer
-let formatCanvas: GPUTextureFormat
 
 let frameStart: number = 0
 
@@ -42,7 +47,8 @@ const main = async (): Promise<void> => {
         const dpr = window.devicePixelRatio
         canvas.width = window.innerWidth * dpr
         canvas.height = window.innerHeight * dpr
-        console.debug('resize', canvas.width, canvas.height)
+        resolution = [canvas.width / renderScale, canvas.height / renderScale]
+        console.debug('resize', [canvas.width, canvas.height], resolution)
     }
     window.addEventListener('resize', resize)
     resize()
@@ -63,22 +69,36 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
 const initCompute = async () => {
     const computeModule = device.createShaderModule({
         code: wgsl`
-const resolution = vec2u(${resolution.join(',')});
+struct Uniforms {
+    outSize: vec2f,
+    renderScale: f32,
+}
 
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(1) var<uniform> uniforms: Uniforms;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  if (gid.x >= resolution.x || gid.y >= resolution.y) { return; }
-  let uv = vec3f(gid).xy / vec2f(resolution);
-  textureStore(out, vec2u(gid.xy), vec4<f32>(uv, 0., 1.));
+  if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
+  let uv = vec3f(gid).xy / uniforms.outSize;
+  textureStore(out, gid.xy, vec4f(uv, 0., 1.));
+  // if gid.x == 0 || gid.y == 0 || gid.x == u32(uniforms.outSize.x) - 1 || gid.y == u32(uniforms.outSize.y) - 1 {
+  //     textureStore(out, gid.xy, vec4f(1., 0., .0, 1.));
+  // } else if (gid.x + gid.y) % 2 == 0 {
+  //     textureStore(out, gid.xy, vec4f(0., 0., .5, 1.));
+  // } else {
+  //     textureStore(out, gid.xy, vec4f(1., 1., 1., 1.));
+  // }
 }
 `
     })
 
     // needed because rgba16float is not the default choice for storage textures
     const layout = device.createBindGroupLayout({
-        entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: formatComputeTexture } }]
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: formatComputeTexture } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+        ]
     })
 
     computePipeline = await device.createComputePipelineAsync({
@@ -86,15 +106,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         compute: { module: computeModule, entryPoint: 'main' }
     })
 
+    uniformBuffer = device.createBuffer({
+        size: 256,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    })
+
     computeOutputTexture = device.createTexture({
-        size: [resolution[0], resolution[1], 1],
+        size: [computeOutputTextureSize, computeOutputTextureSize, 1],
         format: formatComputeTexture,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
     })
 
     computeBindGroup = device.createBindGroup({
         layout,
-        entries: [{ binding: 0, resource: computeOutputTexture.createView() }]
+        entries: [
+            { binding: 0, resource: computeOutputTexture.createView() },
+            { binding: 1, resource: uniformBuffer }
+        ]
     })
 }
 
@@ -118,10 +146,14 @@ const initRender = async () => {
 
     const renderModule = device.createShaderModule({
         code: wgsl`
-const resolution = vec2u(${resolution.join(',')});
+struct Uniforms {
+    outSize: vec2f,
+    renderScale: f32,
+}
 
 @group(0) @binding(0) var computeTexture: texture_2d<f32>;
 @group(0) @binding(1) var computeSampler: sampler;
+@group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
 struct VertexOut {
     @builtin(position) pos: vec4f,
@@ -135,7 +167,14 @@ fn mainVertex(@location(0) position: vec2f) -> VertexOut {
 
 @fragment
 fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
-    return textureSample(computeTexture, computeSampler, vout.uv);
+    var uv = vout.uv * (uniforms.outSize);
+    let exactSize = floor(uniforms.outSize);
+    uv += .5 * (exactSize - uniforms.outSize);
+    if uv.x < 0. || uv.y < 0. || uv.x > exactSize.x || uv.y > exactSize.y {
+        discard;
+    }
+    uv /= ${computeOutputTextureSize};
+    return textureSample(computeTexture, computeSampler, uv);
 }
 `
     })
@@ -170,15 +209,14 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
     const sampler = device.createSampler({
         magFilter: 'nearest',
-        minFilter: 'nearest',
-        addressModeU: 'repeat',
-        addressModeV: 'repeat'
+        minFilter: 'nearest'
     })
     renderBindGroup = device.createBindGroup({
         layout: renderPipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: computeOutputTexture.createView() },
-            { binding: 1, resource: sampler }
+            { binding: 1, resource: sampler },
+            { binding: 2, resource: uniformBuffer }
         ]
     })
 }
@@ -199,11 +237,17 @@ const update = async () => {
     frameStart = start
 }
 
+const writeUniforms = () => {
+    const uniforms = new Float32Array([...resolution, renderScale])
+    device.queue.writeBuffer(uniformBuffer, 0, uniforms)
+}
+
 const compute = () => {
     const commandEncoder = device.createCommandEncoder()
     const pass = commandEncoder.beginComputePass()
     pass.setPipeline(computePipeline)
     pass.setBindGroup(0, computeBindGroup)
+    writeUniforms()
     pass.dispatchWorkgroups(Math.ceil(resolution[0] / workgroupSize[0]), Math.ceil(resolution[1] / workgroupSize[1]))
     pass.end()
     device.queue.submit([commandEncoder.finish()])
@@ -223,6 +267,7 @@ const draw = () => {
     passEncoder.setPipeline(renderPipeline)
     passEncoder.setVertexBuffer(0, clipVertexBuffer)
     passEncoder.setBindGroup(0, renderBindGroup)
+    writeUniforms()
     passEncoder.draw(6)
     passEncoder.end()
     device.queue.submit([commandEncoder.finish()])
