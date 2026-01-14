@@ -1,7 +1,7 @@
 import './index.css'
 
 const workgroupSize = [8, 8]
-const renderScale = 1 / 8
+const renderScale = 1 / 12
 const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 
@@ -81,8 +81,8 @@ struct Uniforms {
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
   let pixelPos = vec3f(gid).xy;
-  // let outColor = outUv(pixelPos);
-  let outColor = outCheckerboard(pixelPos);
+  let outColor = outUv(pixelPos);
+  // let outColor = outCheckerboard(pixelPos);
   textureStore(out, gid.xy, outColor);
 }
 
@@ -180,12 +180,11 @@ fn mainVertex(@location(0) position: vec2f) -> VertexOut {
 
 @fragment
 fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
-    var uv = vout.uv * (uniforms.outSize);
-    let exactSize = floor(uniforms.outSize);
+    let os = uniforms.outSize - 1;
+    var uv = vout.uv * (os);
+    let exactSize = floor(os);
     uv += .5 * (exactSize - uniforms.outSize);
-    if uv.x < 0. || uv.y < 0. || uv.x > exactSize.x || uv.y > exactSize.y {
-        discard;
-    }
+    uv += 1;
     uv /= ${computeOutputTextureSize};
     return textureSample(computeTexture, computeSampler, uv);
 }
