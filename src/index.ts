@@ -1,9 +1,35 @@
+import { BufferAttribute, BufferGeometry, Camera, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera } from 'three'
+import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import './index.css'
+
+type SceneObject = {
+    mesh: Mesh
+    index: BufferAttribute
+    position: BufferAttribute
+    normal: BufferAttribute
+    uv: BufferAttribute
+    indexOffset: number
+    vertexOffset: number
+    matrixWorld: Matrix4
+}
+
+type CameraConfig = {
+    camera: Camera
+    sensorWidth: number
+    focalLength: number
+    matrixWorld: Matrix4
+}
+
+const materials: { [name: string]: MeshStandardMaterial } = {}
+const objects: SceneObject[] = []
+let camera!: CameraConfig
 
 const workgroupSize = [8, 8]
 const renderScale = 1 / 12
 const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
+const meshArraySize = 8192
+const objectArraySize = 128
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -25,6 +51,19 @@ let frameStart: number = 0
 const wgsl = String.raw
 
 const commons = wgsl`
+struct Storage {
+    index: array<f32, ${meshArraySize}>,
+    position: array<f32, ${meshArraySize}>,
+    normal: array<f32, ${meshArraySize}>,
+    uv: array<f32, ${meshArraySize}>,
+    objects: array<SceneObject, ${objectArraySize}>,
+    objectCount: u32,
+}
+struct SceneObject {
+    indexOffset: f32,
+    vertexOffset: f32,
+    matrixWorld: mat4x4f,
+}
 struct Uniforms {
     outSize: vec2f,
     renderScale: f32,
@@ -32,6 +71,50 @@ struct Uniforms {
 `
 
 const main = async (): Promise<void> => {
+    const gltfPath = '/scene.glb'
+    const gltfData = await (await fetch(gltfPath)).arrayBuffer()
+    const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
+    let indexOffset = 0
+    let vertexOffset = 0
+    gltf.scene.traverse(o => {
+        if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
+            materials[o.material.name] = o.material
+            const geometry = o.geometry
+            if (!geometry.index) {
+                console.warn('no index buffer', o)
+                return
+            }
+            const object = {
+                mesh: o,
+                index: geometry.index!,
+                position: geometry.attributes['position'],
+                normal: geometry.attributes['position'],
+                uv: geometry.attributes['uv'],
+                indexOffset,
+                vertexOffset,
+                matrixWorld: o.matrixWorld
+            }
+            if (!(object.position.count == object.normal.count && object.position.count == object.uv.count)) {
+                console.warn('inconsistent buffer size', object)
+                return
+            }
+            indexOffset += object.index.array.byteLength
+            vertexOffset += object.position.array.byteLength
+            objects.push(object)
+        }
+        if (o instanceof PerspectiveCamera) {
+            camera = {
+                camera: o,
+                sensorWidth: o.filmGauge,
+                focalLength: o.getFocalLength(),
+                matrixWorld: o.matrixWorld
+            }
+        }
+    })
+    console.log(objects)
+    console.log(materials)
+    console.log(camera)
+
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
         return
@@ -43,6 +126,7 @@ const main = async (): Promise<void> => {
         alert('no WebGPU device')
         return
     }
+    device.addEventListener('uncapturederror', event => console.error(event.error.message))
     console.debug(device)
 
     canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -64,6 +148,7 @@ const main = async (): Promise<void> => {
     await initRender()
 
     requestAnimationFrame(loop)
+    // setInterval(update)
     // await update()
 }
 
@@ -80,9 +165,11 @@ ${commons}
 
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;
+@group(0) @binding(2) var<storage, read> store: Storage;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
+  _ = store;
   if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
   let pixelPos = vec3f(gid).xy;
   let outColor = outUv(pixelPos);
@@ -114,7 +201,8 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     const layout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: computeOutputTextureFormat } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
         ]
     })
 
@@ -128,6 +216,47 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
+    // index: array<f32, ${meshArraySize}>,
+    // position: array<f32, ${meshArraySize}>,
+    // normal: array<f32, ${meshArraySize}>,
+    // uv: array<f32, ${meshArraySize}>,
+    // objects: array<SceneObject, ${objectArraySize}>,
+    // objectCount: u32,
+    //
+    // indexOffset: f32,
+    // vertexOffset: f32,
+    // matrixWorld: mat4x4f,
+
+    const indexArray = new Float32Array(meshArraySize)
+    const positionArray = new Float32Array(meshArraySize)
+    const normalArray = new Float32Array(meshArraySize)
+    const uvArray = new Float32Array(meshArraySize)
+    const objectArray: number[][] = []
+    for (const o of objects) {
+        indexArray.set(o.index.array, o.indexOffset)
+        positionArray.set(o.position.array, o.vertexOffset)
+        normalArray.set(o.normal.array, o.vertexOffset)
+        uvArray.set(o.uv.array, o.vertexOffset)
+        objectArray.push([o.indexOffset, o.vertexOffset, ...o.matrixWorld.toArray()])
+    }
+    const objectByteLength = new Float32Array(objectArray[0]).byteLength
+    const objectsTypedArray = new Float32Array(objectByteLength * objectArraySize)
+    objectsTypedArray.set(objectArray.flat())
+    const storageBufferArray = new Float32Array([
+        ...indexArray,
+        ...positionArray,
+        ...normalArray,
+        ...uvArray,
+        ...objectsTypedArray,
+        objects.length
+    ])
+    console.log(storageBufferArray)
+    const storageBuffer = device.createBuffer({
+        size: storageBufferArray.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    })
+    device.queue.writeBuffer(storageBuffer, 0, storageBufferArray)
+
     computeOutputTexture = device.createTexture({
         size: [computeOutputTextureSize, computeOutputTextureSize, 1],
         format: computeOutputTextureFormat,
@@ -138,7 +267,8 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         layout,
         entries: [
             { binding: 0, resource: computeOutputTexture.createView() },
-            { binding: 1, resource: uniformBuffer }
+            { binding: 1, resource: uniformBuffer },
+            { binding: 2, resource: storageBuffer }
         ]
     })
 }
@@ -159,7 +289,7 @@ const initRender = async () => {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     })
 
-    device.queue.writeBuffer(clipVertexBuffer, 0, clipPlane, 0, clipPlane.length)
+    device.queue.writeBuffer(clipVertexBuffer, 0, clipPlane)
 
     const renderModule = device.createShaderModule({
         code: wgsl`
