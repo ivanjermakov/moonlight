@@ -292,6 +292,7 @@ const initCompute = async () => {
 ${commons}
 
 const e = 1e-7;
+const maxDistance = 1e10;
 
 struct Ray {
     origin: vec3f,
@@ -325,18 +326,22 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     seed2.y = random(seed2.x * pixelPos.y);
 
     let cameraRay = cameraRay(pixelPos);
-    let rayCast = castRay(pixelPos, cameraRay);
+    let outColor = traceRay(pixelPos, cameraRay);
+    textureStore(out, gid.xy, vec4f(outColor, 1));
+}
 
-    var outColor = vec4f(.2, .2, .2, 1);
+fn traceRay(pixelPos: vec2f, ray: Ray) -> vec3f {
+    let rayCast = castRay(pixelPos, ray);
+
+    var outColor = vec3f(.2, .2, .2);
     if rayCast.intersection.hit {
-        let objectColor = store.materials[u32(store.objects[rayCast.object].material)].baseColor;
+        let objectColor = store.materials[u32(store.objects[rayCast.object].material)].baseColor.rbg;
         outColor = objectColor;
     }
-    textureStore(out, gid.xy, outColor);
+    return outColor;
 }
 
 fn castRay(pixelPos: vec2f, ray: Ray) -> RayCast {
-    let maxDistance = 1e10;
     var rayCast = RayCast(Intersection(), 0u, maxDistance);
     var hitDistance = maxDistance;
     for (var i = 0u; i < u32(store.objectCount); i++) {
