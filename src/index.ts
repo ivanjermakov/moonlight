@@ -6,7 +6,8 @@ import {
     Mesh,
     MeshStandardMaterial,
     PerspectiveCamera,
-    Quaternion
+    Quaternion,
+    Vector3
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import './index.css'
@@ -35,8 +36,8 @@ const objects: SceneObject[] = []
 let camera!: CameraConfig
 
 const workgroupSize = [8, 8]
-const renderScale = 1 / 12
-const computeOutputTextureSize = 4096
+const renderScale = 1 / 4
+const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectArraySize = 128
@@ -68,7 +69,7 @@ struct Storage {
     uv: array<f32, ${meshArraySize}>,
     objects: array<SceneObject, ${objectArraySize}>,
     camera: Camera,
-    objectCount: u32,
+    objectCount: f32,
     p1: f32,
     p2: f32,
     p3: f32,
@@ -76,9 +77,9 @@ struct Storage {
 struct SceneObject {
     matrixWorld: mat4x4f,
     indexOffset: f32,
+    indexCount: f32,
     vertexOffset: f32,
-    p1: f32,
-    p2: f32,
+    vertexCount: f32,
 }
 struct Camera {
     matrixWorld: mat4x4f,
@@ -122,8 +123,8 @@ const main = async (): Promise<void> => {
                 console.warn('inconsistent buffer size', object)
                 return
             }
-            indexOffset += object.index.array.byteLength
-            vertexOffset += object.position.array.byteLength
+            indexOffset += object.index.count
+            vertexOffset += object.position.count
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
@@ -136,6 +137,8 @@ const main = async (): Promise<void> => {
                 matrixWorld: o.matrixWorld,
                 matrixRotation
             }
+            console.log(o.getWorldDirection(new Vector3()))
+            console.log(new Vector3(0, 0, -1).applyMatrix4(matrixRotation))
         }
     })
     console.debug(objects)
@@ -190,9 +193,16 @@ const initCompute = async () => {
         code: wgsl`
 ${commons}
 
+const e = 1e-7;
+
 struct Ray {
-    start: vec3f,
+    origin: vec3f,
     dir: vec3f,
+}
+
+struct Intersection {
+    hit: bool,
+    point: vec3f,
 }
 
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
@@ -202,12 +212,40 @@ struct Ray {
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   _ = store;
-  if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
+  if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
+      return;
+  }
   let pixelPos = vec3f(gid).xy;
   // let outColor = outUv(pixelPos);
   // let outColor = outCheckerboard(pixelPos);
   let cameraRay = cameraRay(pixelPos);
-  let outColor = vec4f(cameraRay.dir, 1);
+  for (var i = 0u; i < u32(store.objectCount); i++) {
+  // for (var i = 0u; i < 3; i++) {
+      let object = store.objects[i];
+      for (var ii = 0u; ii < u32(object.indexCount); ii++) {
+          let indexOffset = u32(object.indexOffset);
+          let triIndex = array<u32, 3>(
+              u32(store.index[indexOffset + 3 * ii]),
+              u32(store.index[indexOffset + 3 * ii + 1]),
+              u32(store.index[indexOffset + 3 * ii + 2]),
+          );
+          var triangle: array<vec3f, 3>;
+          for (var p = 0u; p < 3; p++) {
+              let trianglePosLocal = vec3f(
+                  store.position[3 * (u32(object.vertexOffset) + triIndex[p])],
+                  store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 1],
+                  store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 2],
+              );
+              triangle[p] = (vec4f(trianglePosLocal, 1) * object.matrixWorld).xyz;
+          }
+          let intersection = intersectTriangle(cameraRay, triangle);
+          if (intersection.hit) {
+              textureStore(out, gid.xy, vec4f(f32(i), 0, 0, 1));
+              return;
+          }
+      }
+  }
+  let outColor = vec4f(1, 1, 1, 1);
   textureStore(out, gid.xy, outColor);
 }
 
@@ -215,16 +253,54 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
     let sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspectRatio);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
-    // camera without transform is pointing at -Y, up is +Z
+    // default camera transform is -Z forward, 
+    // convert from mm to m
     let startLocal = vec3f(
-        pixelPosNorm.x * sensorSize.x,
+        -pixelPosNorm.x * sensorSize.x,
         pixelPosNorm.y * sensorSize.y,
         -store.camera.focalLength,
-    );
+    ) / 1000;
     return Ray(
         (vec4f(startLocal, 1) * store.camera.matrixWorld).xyz,
         normalize((vec4f(startLocal, 0) * store.camera.matrixRotation).xyz),
     );
+    // return Ray((vec4f(startLocal, 1) * store.camera.matrixWorld).xyz, normalize(startLocal));
+}
+
+// adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
+fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
+    var intersection = Intersection(false, vec3f());
+	let e1 = triangle[1] - triangle[0];
+	let e2 = triangle[2] - triangle[0];
+
+	let ray_cross_e2 = cross(ray.dir, e2);
+	let det = dot(e1, ray_cross_e2);
+
+	if det > -e && det < e {
+		return intersection;
+	}
+
+	let inv_det = 1 / det;
+	let s = ray.origin - triangle[0];
+	let u = inv_det * dot(s, ray_cross_e2);
+	if u < 0 || u > 1 {
+		return intersection;
+	}
+
+	let s_cross_e1 = cross(s, e1);
+	let v = inv_det * dot(ray.dir, s_cross_e1);
+	if v < 0 || u + v > 1 {
+		return intersection;
+	}
+
+	let t = inv_det * dot(e2, s_cross_e1);
+	if t <= e {
+        return intersection;
+    }
+
+    intersection.hit = true;
+    intersection.point = ray.origin + ray.dir * t;
+    return intersection;
 }
 
 fn outUv(pixelPos: vec2f) -> vec4f {
@@ -273,10 +349,10 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     const objectArray: number[] = []
     for (const o of objects) {
         indexArray.set(o.index.array, o.indexOffset)
-        positionArray.set(o.position.array, o.vertexOffset)
-        normalArray.set(o.normal.array, o.vertexOffset)
-        uvArray.set(o.uv.array, o.vertexOffset)
-        objectArray.push(...o.matrixWorld.toArray(), o.indexOffset, o.vertexOffset, 0, 0)
+        positionArray.set(o.position.array, o.vertexOffset * 3)
+        normalArray.set(o.normal.array, o.vertexOffset * 3)
+        uvArray.set(o.uv.array, o.vertexOffset * 2)
+        objectArray.push(...o.matrixWorld.toArray(), o.indexOffset, o.index.count, o.vertexOffset, o.position.count)
     }
     const objectsTypedArray = new Float32Array(20 * objectArraySize)
     objectsTypedArray.set(objectArray)
@@ -284,7 +360,8 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         ...camera.matrixWorld.toArray(),
         ...camera.matrixRotation.toArray(),
         camera.sensorWidth,
-        camera.focalLength,
+        // camera.focalLength,
+        5,
         0,
         0
     ]
@@ -300,7 +377,6 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         0,
         0
     ]
-    console.debug(storageBufferArray)
     const storageBuffer = device.createBuffer({
         size: storageBufferArray.length * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
