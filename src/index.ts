@@ -69,6 +69,7 @@ let renderPipeline: GPURenderPipeline
 let renderBindGroup: GPUBindGroup
 let clipVertexBuffer: GPUBuffer
 
+let frame: number = 0
 let frameStart: number = 0
 
 const wgsl = String.raw
@@ -113,8 +114,17 @@ struct Camera {
 struct Uniforms {
     outSize: vec2f,
     renderScale: f32,
+    frame: f32,
 }
-`
+
+// www.pcg-random.org
+fn random(seed: u32) -> u32 {
+    let state = seed * 747796405 + 2891336453;
+    var result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
+    result = (result >> 22) ^ result;
+    result /= 4294967295;
+    return result;
+}`
 
 const main = async (): Promise<void> => {
     const gltfPath = '/scene.glb'
@@ -232,10 +242,11 @@ const update = async () => {
 
     document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
     frameStart = start
+    frame++
 }
 
 const writeUniforms = () => {
-    const uniforms = new Float32Array([...resolution, renderScale])
+    const uniforms = new Float32Array([...resolution, renderScale, frame])
     device.queue.writeBuffer(uniformBuffer, 0, uniforms)
 }
 
@@ -305,8 +316,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   let pixelPos = vec3f(gid).xy;
   let cameraRay = cameraRay(pixelPos);
-  var intersectionObject = 0u;
-  var intersectionDistance = 1e10;
+  var hitObject = 0u;
+  var hitDistance = 1e10;
   for (var i = 0u; i < u32(store.objectCount); i++) {
       let object = store.objects[i];
       let indexOffset = u32(object.indexOffset);
@@ -329,15 +340,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
           let intersection = intersectTriangle(cameraRay, triangle);
           if intersection.hit {
               let d = distance(intersection.point, cameraRay.origin);
-              if d < intersectionDistance {
-                  intersectionDistance = d;
-                  intersectionObject = i;
+              if d < hitDistance {
+                  hitDistance = d;
+                  hitObject = i;
               }
           }
       }
   }
-  if intersectionDistance < 1e10 {
-      let objectColor = store.materials[u32(store.objects[intersectionObject].material)].baseColor;
+  if hitDistance < 1e10 {
+      let objectColor = store.materials[u32(store.objects[hitObject].material)].baseColor;
       textureStore(out, gid.xy, vec4f(objectColor));
       return;
   }
@@ -350,7 +361,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 fn cameraRay(pixelPos: vec2f) -> Ray {
     let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
     let sensorSize = vec2f(store.camera.sensorWidth * aspectRatio, store.camera.sensorWidth);
-    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld) + vec3f(0, 0, 0);
+    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
     let dirLocal = normalize(vec3f(
         pixelPosNorm.x * sensorSize.x,
