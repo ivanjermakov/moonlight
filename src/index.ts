@@ -6,8 +6,7 @@ import {
     Mesh,
     MeshStandardMaterial,
     PerspectiveCamera,
-    Quaternion,
-    Vector3
+    Quaternion
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import './index.css'
@@ -137,8 +136,6 @@ const main = async (): Promise<void> => {
                 matrixWorld: o.matrixWorld,
                 matrixRotation
             }
-            console.log(o.getWorldDirection(new Vector3()))
-            console.log(new Vector3(0, 0, -1).applyMatrix4(matrixRotation))
         }
     })
     console.debug(objects)
@@ -222,12 +219,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   // for (var i = 0u; i < u32(store.objectCount); i++) {
   for (var i = 0u; i < 5; i++) {
       let object = store.objects[i];
-      for (var ii = 0u; ii < u32(object.indexCount); ii++) {
-          let indexOffset = u32(object.indexOffset);
+      let indexOffset = u32(object.indexOffset);
+      for (var ii = 0u; ii < u32(object.indexCount); ii+=3) {
           let triIndex = array<u32, 3>(
-              u32(store.index[indexOffset + 3 * ii]),
-              u32(store.index[indexOffset + 3 * ii + 1]),
-              u32(store.index[indexOffset + 3 * ii + 2]),
+              u32(store.index[indexOffset + ii]),
+              u32(store.index[indexOffset + ii + 1]),
+              u32(store.index[indexOffset + ii + 2]),
           );
           var triangle: array<vec3f, 3>;
           for (var p = 0u; p < 3; p++) {
@@ -265,7 +262,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     // default camera transform is -Z forward, 
     // convert from mm to m
     let startLocal = vec3f(
-        pixelPosNorm.x * sensorSize.x,
+        -pixelPosNorm.x * sensorSize.x,
         pixelPosNorm.y * sensorSize.y,
         store.camera.focalLength,
     ) / 1000;
