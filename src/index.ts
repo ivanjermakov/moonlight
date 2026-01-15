@@ -2,6 +2,7 @@ import {
     BufferAttribute,
     BufferGeometry,
     Camera,
+    Color,
     Matrix4,
     Mesh,
     MeshStandardMaterial,
@@ -20,6 +21,13 @@ type SceneObject = {
     indexOffset: number
     vertexOffset: number
     matrixWorld: Matrix4
+    material: number
+}
+
+type SceneMaterial = {
+    material: MeshStandardMaterial
+    baseColor: Color
+    emissive: Color
 }
 
 type CameraConfig = {
@@ -30,7 +38,7 @@ type CameraConfig = {
     focalLength: number
 }
 
-const materials: { [name: string]: MeshStandardMaterial } = {}
+const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
 
@@ -39,8 +47,10 @@ const renderScale = 1 / 4
 const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
-const objectArraySize = 128
-const sceneObjectSize = 20
+const objectsArraySize = 128
+const materialsArraySize = 32
+const sceneObjectSize = 24
+const sceneMaterialSize = 8
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode: RunMode = 'vsync'
 
@@ -69,7 +79,8 @@ struct Storage {
     position: array<f32, ${meshArraySize}>,
     normal: array<f32, ${meshArraySize}>,
     uv: array<f32, ${meshArraySize}>,
-    objects: array<SceneObject, ${objectArraySize}>,
+    objects: array<SceneObject, ${objectsArraySize}>,
+    materials: array<SceneMaterial, ${materialsArraySize}>,
     camera: Camera,
     objectCount: f32,
     p1: f32,
@@ -82,6 +93,14 @@ struct SceneObject {
     indexCount: f32,
     vertexOffset: f32,
     vertexCount: f32,
+    material: f32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
+}
+struct SceneMaterial {
+    baseColor: vec4f,
+    emissiveColor: vec4f,
 }
 struct Camera {
     matrixWorld: mat4x4f,
@@ -105,13 +124,22 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
-            materials[o.material.name] = o.material
+            const material = o.material
+            let materialIndex = materials.findIndex(m => m.material.name === material.name)
+            if (materialIndex < 0) {
+                materialIndex = materials.length
+                materials.push({
+                    material,
+                    baseColor: material.color,
+                    emissive: material.emissive
+                })
+            }
             const geometry = o.geometry
             if (!geometry.index) {
                 console.warn('no index buffer', o)
                 return
             }
-            const object = {
+            const object: SceneObject = {
                 mesh: o,
                 index: geometry.index!,
                 position: geometry.attributes.position,
@@ -119,7 +147,8 @@ const main = async (): Promise<void> => {
                 uv: geometry.attributes.uv,
                 indexOffset,
                 vertexOffset,
-                matrixWorld: o.matrixWorld
+                matrixWorld: o.matrixWorld,
+                material: materialIndex
             }
             if (!(object.position.count === object.normal.count && object.position.count === object.uv.count)) {
                 console.warn('inconsistent buffer size', object)
@@ -308,7 +337,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
   }
   if intersectionDistance < 1e10 {
-      textureStore(out, gid.xy, vec4f(f32(intersectionObject) / 10, 0, 0, 1));
+      let objectColor = store.materials[u32(store.objects[intersectionObject].material)].baseColor;
+      textureStore(out, gid.xy, vec4f(objectColor));
       return;
   }
   let outColor = vec4f(.2, .2, .2, 1);
@@ -434,16 +464,34 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     const positionArray = new Float32Array(meshArraySize)
     const normalArray = new Float32Array(meshArraySize)
     const uvArray = new Float32Array(meshArraySize)
-    const objectArray: number[] = []
+    const objectsArray: number[] = []
     for (const o of objects) {
         indexArray.set(o.index.array, o.indexOffset)
         positionArray.set(o.position.array, o.vertexOffset * 3)
         normalArray.set(o.normal.array, o.vertexOffset * 3)
         uvArray.set(o.uv.array, o.vertexOffset * 2)
-        objectArray.push(...o.matrixWorld.toArray(), o.indexOffset, o.index.count, o.vertexOffset, o.position.count)
+        objectsArray.push(
+            ...o.matrixWorld.toArray(),
+            o.indexOffset,
+            o.index.count,
+            o.vertexOffset,
+            o.position.count,
+            o.material,
+            0,
+            0,
+            0
+        )
     }
-    const objectsTypedArray = new Float32Array(sceneObjectSize * objectArraySize)
-    objectsTypedArray.set(objectArray)
+    const objectsTypedArray = new Float32Array(sceneObjectSize * objectsArraySize)
+    objectsTypedArray.set(objectsArray)
+
+    const materialsArray: number[] = []
+    for (const m of materials) {
+        materialsArray.push(...m.baseColor.toArray(), 1, ...m.emissive, m.material.emissiveIntensity)
+    }
+    const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)
+    materialsTypedArray.set(materialsArray)
+
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
         ...camera.rotation.toArray(),
@@ -458,6 +506,7 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         ...normalArray,
         ...uvArray,
         ...objectsTypedArray,
+        ...materialsTypedArray,
         ...cameraArray,
         objects.length,
         0,
