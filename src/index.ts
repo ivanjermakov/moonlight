@@ -118,12 +118,11 @@ struct Uniforms {
 }
 
 // www.pcg-random.org
-fn random(seed: u32) -> u32 {
-    let state = seed * 747796405 + 2891336453;
+fn random(seed: f32) -> f32 {
+    let state = u32(seed) * 747796405 + 2891336453;
     var result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
     result = (result >> 22) ^ result;
-    result /= 4294967295;
-    return result;
+    return f32(result) / 4294967295;
 }`
 
 const main = async (): Promise<void> => {
@@ -304,58 +303,73 @@ struct Intersection {
     point: vec3f,
 }
 
+struct RayCast {
+    intersection: Intersection,
+    object: u32,
+    distance: f32,
+}
+
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;
 @group(0) @binding(2) var<storage, read> store: Storage;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
-  _ = store;
-  if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
-      return;
-  }
-  let pixelPos = vec3f(gid).xy;
-  let cameraRay = cameraRay(pixelPos);
-  var hitObject = 0u;
-  var hitDistance = 1e10;
-  for (var i = 0u; i < u32(store.objectCount); i++) {
-      let object = store.objects[i];
-      let indexOffset = u32(object.indexOffset);
-      let vertexOffset = u32(object.vertexOffset);
-      for (var ii = 0u; ii < u32(object.indexCount); ii+=3) {
-          let triIndex = array<u32, 3>(
-              u32(store.index[indexOffset + ii]),
-              u32(store.index[indexOffset + ii + 1]),
-              u32(store.index[indexOffset + ii + 2]),
-          );
-          var triangle: array<vec3f, 3>;
-          for (var p = 0u; p < 3; p++) {
-              let trianglePosLocal = vec3f(
-                  store.position[3 * (vertexOffset + triIndex[p])],
-                  store.position[3 * (vertexOffset + triIndex[p]) + 1],
-                  store.position[3 * (vertexOffset + triIndex[p]) + 2],
-              );
-              triangle[p] = transformPoint(trianglePosLocal, object.matrixWorld);
-          }
-          let intersection = intersectTriangle(cameraRay, triangle);
-          if intersection.hit {
-              let d = distance(intersection.point, cameraRay.origin);
-              if d < hitDistance {
-                  hitDistance = d;
-                  hitObject = i;
-              }
-          }
-      }
-  }
-  if hitDistance < 1e10 {
-      let objectColor = store.materials[u32(store.objects[hitObject].material)].baseColor;
-      textureStore(out, gid.xy, vec4f(objectColor));
-      return;
-  }
-  let outColor = vec4f(.2, .2, .2, 1);
-  // let outColor = outUv(pixelPos);
-  // let outColor = outCheckerboard(pixelPos);
-  textureStore(out, gid.xy, outColor);
+    if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
+        return;
+    }
+    let pixelPos = vec3f(gid).xy;
+    var seed = random(uniforms.frame * 12345);
+    var seed2 = vec2f();
+    seed2.x = random(seed * pixelPos.x);
+    seed2.y = random(seed2.x * pixelPos.y);
+
+    let cameraRay = cameraRay(pixelPos);
+    let rayCast = castRay(pixelPos, cameraRay);
+
+    var outColor = vec4f(.2, .2, .2, 1);
+    if rayCast.intersection.hit {
+        let objectColor = store.materials[u32(store.objects[rayCast.object].material)].baseColor;
+        outColor = objectColor;
+    }
+    textureStore(out, gid.xy, outColor);
+}
+
+fn castRay(pixelPos: vec2f, ray: Ray) -> RayCast {
+    let maxDistance = 1e10;
+    var rayCast = RayCast(Intersection(), 0u, maxDistance);
+    var hitDistance = maxDistance;
+    for (var i = 0u; i < u32(store.objectCount); i++) {
+        let object = store.objects[i];
+        let indexOffset = u32(object.indexOffset);
+        let vertexOffset = u32(object.vertexOffset);
+        for (var ii = 0u; ii < u32(object.indexCount); ii+=3) {
+            let triIndex = array<u32, 3>(
+                u32(store.index[indexOffset + ii]),
+                u32(store.index[indexOffset + ii + 1]),
+                u32(store.index[indexOffset + ii + 2]),
+            );
+            var triangle: array<vec3f, 3>;
+            for (var p = 0u; p < 3; p++) {
+                let trianglePosLocal = vec3f(
+                    store.position[3 * (vertexOffset + triIndex[p])],
+                    store.position[3 * (vertexOffset + triIndex[p]) + 1],
+                    store.position[3 * (vertexOffset + triIndex[p]) + 2],
+                );
+                triangle[p] = transformPoint(trianglePosLocal, object.matrixWorld);
+            }
+            let intersection = intersectTriangle(ray, triangle);
+            if intersection.hit {
+                let d = distance(intersection.point, ray.origin);
+                if d < rayCast.distance {
+                    rayCast.intersection = intersection;
+                    rayCast.object = i;
+                    rayCast.distance = d;
+                }
+            }
+        }
+    }
+    return rayCast;
 }
 
 fn cameraRay(pixelPos: vec2f) -> Ray {
