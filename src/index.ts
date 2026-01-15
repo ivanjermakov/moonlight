@@ -35,12 +35,14 @@ const objects: SceneObject[] = []
 let camera!: CameraConfig
 
 const workgroupSize = [8, 8]
-const renderScale = 1 / 1
+const renderScale = 1 / 4
 const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectArraySize = 128
 const sceneObjectSize = 20
+type RunMode = 'vsync' | 'busy' | 'single'
+const runMode: RunMode = 'vsync'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -173,9 +175,70 @@ const main = async (): Promise<void> => {
     await initCompute()
     await initRender()
 
+    switch (runMode as RunMode) {
+        case 'vsync':
+            requestAnimationFrame(loop)
+            return
+        case 'single':
+            await update()
+            return
+        case 'busy':
+            while (true) {
+                await update()
+            }
+    }
+}
+
+const loop = async () => {
+    await update()
     requestAnimationFrame(loop)
-    // setInterval(update)
-    // await update()
+}
+
+const update = async () => {
+    const start = performance.now()
+
+    compute()
+    draw()
+    await device.queue.onSubmittedWorkDone()
+
+    document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
+    frameStart = start
+}
+
+const writeUniforms = () => {
+    const uniforms = new Float32Array([...resolution, renderScale])
+    device.queue.writeBuffer(uniformBuffer, 0, uniforms)
+}
+
+const compute = () => {
+    const commandEncoder = device.createCommandEncoder()
+    const pass = commandEncoder.beginComputePass()
+    pass.setPipeline(computePipeline)
+    pass.setBindGroup(0, computeBindGroup)
+    writeUniforms()
+    pass.dispatchWorkgroups(Math.ceil(resolution[0] / workgroupSize[0]), Math.ceil(resolution[1] / workgroupSize[1]))
+    pass.end()
+    device.queue.submit([commandEncoder.finish()])
+}
+
+const draw = () => {
+    const commandEncoder = device.createCommandEncoder()
+    const passEncoder = commandEncoder.beginRenderPass({
+        colorAttachments: [
+            {
+                loadOp: 'clear',
+                storeOp: 'store',
+                view: ctx.getCurrentTexture().createView()
+            }
+        ]
+    })
+    passEncoder.setPipeline(renderPipeline)
+    passEncoder.setVertexBuffer(0, clipVertexBuffer)
+    passEncoder.setBindGroup(0, renderBindGroup)
+    writeUniforms()
+    passEncoder.draw(6)
+    passEncoder.end()
+    device.queue.submit([commandEncoder.finish()])
 }
 
 const initDevice = async (): Promise<GPUDevice | undefined> => {
@@ -248,7 +311,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       textureStore(out, gid.xy, vec4f(f32(intersectionObject) / 10, 0, 0, 1));
       return;
   }
-  let outColor = vec4f(1, 1, 1, 1);
+  let outColor = vec4f(.2, .2, .2, 1);
   // let outColor = outUv(pixelPos);
   // let outColor = outCheckerboard(pixelPos);
   textureStore(out, gid.xy, outColor);
@@ -256,7 +319,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 fn cameraRay(pixelPos: vec2f) -> Ray {
     let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
-    let sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspectRatio);
+    let sensorSize = vec2f(store.camera.sensorWidth * aspectRatio, store.camera.sensorWidth);
     let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld) + vec3f(0, 0, 0);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
     let dirLocal = normalize(vec3f(
@@ -512,58 +575,6 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
             { binding: 2, resource: uniformBuffer }
         ]
     })
-}
-
-const loop = async () => {
-    await update()
-    requestAnimationFrame(loop)
-}
-
-const update = async () => {
-    const start = performance.now()
-
-    compute()
-    draw()
-    await device.queue.onSubmittedWorkDone()
-
-    document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
-    frameStart = start
-}
-
-const writeUniforms = () => {
-    const uniforms = new Float32Array([...resolution, renderScale])
-    device.queue.writeBuffer(uniformBuffer, 0, uniforms)
-}
-
-const compute = () => {
-    const commandEncoder = device.createCommandEncoder()
-    const pass = commandEncoder.beginComputePass()
-    pass.setPipeline(computePipeline)
-    pass.setBindGroup(0, computeBindGroup)
-    writeUniforms()
-    pass.dispatchWorkgroups(Math.ceil(resolution[0] / workgroupSize[0]), Math.ceil(resolution[1] / workgroupSize[1]))
-    pass.end()
-    device.queue.submit([commandEncoder.finish()])
-}
-
-const draw = () => {
-    const commandEncoder = device.createCommandEncoder()
-    const passEncoder = commandEncoder.beginRenderPass({
-        colorAttachments: [
-            {
-                loadOp: 'clear',
-                storeOp: 'store',
-                view: ctx.getCurrentTexture().createView()
-            }
-        ]
-    })
-    passEncoder.setPipeline(renderPipeline)
-    passEncoder.setVertexBuffer(0, clipVertexBuffer)
-    passEncoder.setBindGroup(0, renderBindGroup)
-    writeUniforms()
-    passEncoder.draw(6)
-    passEncoder.end()
-    device.queue.submit([commandEncoder.finish()])
 }
 
 main()
