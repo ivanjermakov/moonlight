@@ -233,7 +233,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
                   store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 1],
                   store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 2],
               );
-              triangle[p] = (vec4f(trianglePosLocal, 1) * object.matrixWorld).xyz;
+              triangle[p] = transformPoint(trianglePosLocal, object.matrixWorld);
           }
           let intersection = intersectTriangle(cameraRay, triangle);
           if intersection.hit {
@@ -259,17 +259,34 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
     let sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspectRatio);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
+    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
     // default camera transform is -Z forward, 
     // convert from mm to m
-    let startLocal = vec3f(
+    let dirLocal = normalize(vec3f(
         -pixelPosNorm.x * sensorSize.x,
         pixelPosNorm.y * sensorSize.y,
         store.camera.focalLength,
-    ) / 1000;
+    ));
+    let dir = transformDir(dirLocal, store.camera.matrixRotation);
     return Ray(
-        (vec4f(startLocal, 1) * store.camera.matrixWorld).xyz,
-        normalize((vec4f(startLocal, 0) * store.camera.matrixRotation).xyz),
+        focalPosWorld + dir * store.camera.focalLength / 1000,
+        dir,
     );
+}
+
+fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
+    var v4 = vec4f(point, 1);
+    v4 *= mat;
+    if v4.w != 0 {
+        return v4.xyz / v4.w;
+    }
+    return v4.xyz;
+}
+
+fn transformDir(dir: vec3f, mat: mat4x4f) -> vec3f {
+    var v4 = vec4f(dir, 0);
+    v4 *= mat;
+    return v4.xyz;
 }
 
 // adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
