@@ -35,11 +35,12 @@ const objects: SceneObject[] = []
 let camera!: CameraConfig
 
 const workgroupSize = [8, 8]
-const renderScale = 1 / 2
+const renderScale = 1 / 1
 const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectArraySize = 128
+const sceneObjectSize = 20
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -214,10 +215,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let cameraRay = cameraRay(pixelPos);
   var intersectionObject = 0u;
   var intersectionDistance = 1e10;
-  // for (var i = 0u; i < u32(store.objectCount); i++) {
-  for (var i = 0u; i < 5; i++) {
+  for (var i = 0u; i < u32(store.objectCount); i++) {
       let object = store.objects[i];
       let indexOffset = u32(object.indexOffset);
+      let vertexOffset = u32(object.vertexOffset);
       for (var ii = 0u; ii < u32(object.indexCount); ii+=3) {
           let triIndex = array<u32, 3>(
               u32(store.index[indexOffset + ii]),
@@ -227,9 +228,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
           var triangle: array<vec3f, 3>;
           for (var p = 0u; p < 3; p++) {
               let trianglePosLocal = vec3f(
-                  store.position[3 * (u32(object.vertexOffset) + triIndex[p])],
-                  store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 1],
-                  store.position[3 * (u32(object.vertexOffset) + triIndex[p]) + 2],
+                  store.position[3 * (vertexOffset + triIndex[p])],
+                  store.position[3 * (vertexOffset + triIndex[p]) + 1],
+                  store.position[3 * (vertexOffset + triIndex[p]) + 2],
               );
               triangle[p] = transformPoint(trianglePosLocal, object.matrixWorld);
           }
@@ -256,25 +257,24 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 fn cameraRay(pixelPos: vec2f) -> Ray {
     let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
     let sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspectRatio);
+    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld) + vec3f(0, 0, 0);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
-    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
-    // default camera transform is -Z forward, 
-    // convert from mm to m
     let dirLocal = normalize(vec3f(
-        -pixelPosNorm.x * sensorSize.x,
+        pixelPosNorm.x * sensorSize.x,
         pixelPosNorm.y * sensorSize.y,
-        store.camera.focalLength,
+        -store.camera.focalLength,
     ));
     let dir = applyQuaternion(dirLocal, store.camera.rotation);
     return Ray(
-        focalPosWorld + dir * store.camera.focalLength / 1000,
+        // convert from mm to m
+        focalPosWorld,
         dir,
     );
 }
 
 fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
     var v4 = vec4f(point, 1);
-    v4 *= mat;
+    v4 = mat * v4;
     if v4.w != 0 {
         return v4.xyz / v4.w;
     }
@@ -283,7 +283,7 @@ fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
 
 fn transformDir(dir: vec3f, mat: mat4x4f) -> vec3f {
     var v4 = vec4f(dir, 0);
-    v4 *= mat;
+    v4 = mat * v4;
     return v4.xyz;
 }
 
@@ -379,14 +379,13 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         uvArray.set(o.uv.array, o.vertexOffset * 2)
         objectArray.push(...o.matrixWorld.toArray(), o.indexOffset, o.index.count, o.vertexOffset, o.position.count)
     }
-    const objectsTypedArray = new Float32Array(20 * objectArraySize)
+    const objectsTypedArray = new Float32Array(sceneObjectSize * objectArraySize)
     objectsTypedArray.set(objectArray)
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
         ...camera.rotation.toArray(),
         camera.sensorWidth,
-        // camera.focalLength,
-        5,
+        camera.focalLength,
         0,
         0
     ]
