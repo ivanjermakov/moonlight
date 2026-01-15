@@ -42,8 +42,9 @@ const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
 
-const workgroupSize = [8, 8]
 const renderScale = 1 / 4
+const maxBounces = 4
+const workgroupSize = [8, 8]
 const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
@@ -75,6 +76,9 @@ let frameStart: number = 0
 const wgsl = String.raw
 
 const commons = wgsl`
+const pi = 3.141592653589793;
+const epsilon = 1e-7;
+
 struct Storage {
     index: array<f32, ${meshArraySize}>,
     position: array<f32, ${meshArraySize}>,
@@ -119,11 +123,28 @@ struct Uniforms {
 
 // www.pcg-random.org
 fn random(seed: f32) -> f32 {
-    let state = u32(seed) * 747796405 + 2891336453;
+    let state = u32(seed * 42949) * 747796405 + 2891336453;
     var result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
     result = (result >> 22) ^ result;
     return f32(result) / 4294967295;
-}`
+}
+
+// https://stackoverflow.com/a/6178290
+fn randomNormalDistribution(seed: f32) -> f32 {
+    let theta = 2 * pi * random(seed);
+    let rho = sqrt(-2 * log(random(seed)));
+    return rho * cos(theta);
+}
+
+// https://math.stackexchange.com/a/1585996
+fn randomDirection(seed: f32) -> vec3f {
+    return normalize(vec3f(
+        randomNormalDistribution(seed),
+        randomNormalDistribution(random(seed)),
+        randomNormalDistribution(random(random(seed))),
+    ));
+}
+`
 
 const main = async (): Promise<void> => {
     const gltfPath = '/scene.glb'
@@ -291,8 +312,8 @@ const initCompute = async () => {
         code: wgsl`
 ${commons}
 
-const e = 1e-7;
 const maxDistance = 1e10;
+const maxBounces = ${maxBounces};
 
 struct Ray {
     origin: vec3f,
@@ -307,6 +328,7 @@ struct Intersection {
 struct RayCast {
     intersection: Intersection,
     object: u32,
+    face: u32,
     distance: f32,
 }
 
@@ -320,39 +342,63 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         return;
     }
     let pixelPos = vec3f(gid).xy;
-    var seed = random(uniforms.frame * 12345);
-    var seed2 = vec2f();
-    seed2.x = random(seed * pixelPos.x);
-    seed2.y = random(seed2.x * pixelPos.y);
+    var seed = random(uniforms.frame);
+    seed = random(seed * random(pixelPos.x));
+    seed = random(seed * random(pixelPos.y));
 
     let cameraRay = cameraRay(pixelPos);
-    let outColor = traceRay(pixelPos, cameraRay);
+    let outColor = traceRay(pixelPos, cameraRay, seed);
     textureStore(out, gid.xy, vec4f(outColor, 1));
 }
 
-fn traceRay(pixelPos: vec2f, ray: Ray) -> vec3f {
-    let rayCast = castRay(pixelPos, ray);
+fn traceRay(pixelPos: vec2f, rayStart: Ray, seed_: f32) -> vec3f {
+    var seed = seed_;
+    var light = vec4f(1, 1, 1, 0);
+    var ray = rayStart;
 
-    var outColor = vec3f(.2, .2, .2);
-    if rayCast.intersection.hit {
-        let objectColor = store.materials[u32(store.objects[rayCast.object].material)].baseColor.rbg;
-        outColor = objectColor;
+    for (var bounce = 0u; bounce < maxBounces; bounce++) {
+        let rayCast = castRay(ray);
+
+        if rayCast.intersection.hit {
+            let object = store.objects[rayCast.object];
+            let material = store.materials[u32(object.material)];
+            if material.emissiveColor.a > 1 {
+                light.a += material.emissiveColor.a;
+                break;
+            } else {
+                light = vec4f(light.rgb * material.baseColor.rgb, light.a);
+            }
+            // TODO: smooth shading
+            let firstVertIdx = u32(object.vertexOffset + store.index[u32(object.indexOffset) + rayCast.face]);
+            let normalLocal = vec3f(
+                store.normal[3 * firstVertIdx],
+                store.normal[3 * firstVertIdx] + 1,
+                store.normal[3 * firstVertIdx] + 2,
+            );
+            let normal = transformDir(normalLocal, object.matrixWorld);
+            let dir = randomDirection(seed);
+            seed = random(seed);
+            ray = Ray(rayCast.intersection.point, dir);
+        } else {
+            light.a = 0;
+            break;
+        }
     }
-    return outColor;
+
+    return light.rgb * light.a;
 }
 
-fn castRay(pixelPos: vec2f, ray: Ray) -> RayCast {
-    var rayCast = RayCast(Intersection(), 0u, maxDistance);
-    var hitDistance = maxDistance;
+fn castRay(ray: Ray) -> RayCast {
+    var rayCast = RayCast(Intersection(), 0u, 0u, maxDistance);
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
         let indexOffset = u32(object.indexOffset);
         let vertexOffset = u32(object.vertexOffset);
-        for (var ii = 0u; ii < u32(object.indexCount); ii+=3) {
+        for (var fi = 0u; fi < u32(object.indexCount); fi+=3) {
             let triIndex = array<u32, 3>(
-                u32(store.index[indexOffset + ii]),
-                u32(store.index[indexOffset + ii + 1]),
-                u32(store.index[indexOffset + ii + 2]),
+                u32(store.index[indexOffset + fi]),
+                u32(store.index[indexOffset + fi + 1]),
+                u32(store.index[indexOffset + fi + 2]),
             );
             var triangle: array<vec3f, 3>;
             for (var p = 0u; p < 3; p++) {
@@ -369,6 +415,7 @@ fn castRay(pixelPos: vec2f, ray: Ray) -> RayCast {
                 if d < rayCast.distance {
                     rayCast.intersection = intersection;
                     rayCast.object = i;
+                    rayCast.face = fi;
                     rayCast.distance = d;
                 }
             }
@@ -424,7 +471,7 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
 	let ray_cross_e2 = cross(ray.dir, e2);
 	let det = dot(e1, ray_cross_e2);
 
-	if det > -e && det < e {
+	if det > -epsilon && det < epsilon {
 		return intersection;
 	}
 
@@ -442,7 +489,7 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
 	}
 
 	let t = inv_det * dot(e2, s_cross_e1);
-	if t <= e {
+	if t <= epsilon {
         return intersection;
     }
 
