@@ -53,7 +53,7 @@ const materialsArraySize = 32
 const sceneObjectSize = 24
 const sceneMaterialSize = 8
 type RunMode = 'vsync' | 'busy' | 'single'
-const runMode: RunMode = 'vsync'
+const runMode: RunMode = 'busy'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -62,6 +62,7 @@ let formatCanvas: GPUTextureFormat
 let resolution: [number, number]
 
 let computePipeline: GPUComputePipeline
+let computeAccTexture: GPUTexture
 let computeOutputTexture: GPUTexture
 let computeBindGroup: GPUBindGroup
 let uniformBuffer: GPUBuffer
@@ -121,28 +122,23 @@ struct Uniforms {
     frame: f32,
 }
 
-// www.pcg-random.org
-fn random(seed: f32) -> f32 {
-    let state = u32(seed * 42949) * 747796405 + 2891336453;
-    var result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
-    result = (result >> 22) ^ result;
-    return f32(result) / 4294967295;
+fn random(v: vec2f) -> f32 {
+    return fract(sin(dot(v.xy, vec2f(12.9898, 78.233))) * 43758.5453);
 }
 
 // https://stackoverflow.com/a/6178290
 fn randomNormalDistribution(seed: f32) -> f32 {
-    let theta = 2 * pi * random(seed);
-    let rho = sqrt(-2 * log(random(seed)));
+    let theta = 2 * pi * random(vec2f(seed));
+    let rho = sqrt(-2 * log(random(vec2f(seed))));
     return rho * cos(theta);
 }
 
 // https://math.stackexchange.com/a/1585996
 fn randomDirection(seed: f32) -> vec3f {
-    return normalize(vec3f(
-        randomNormalDistribution(seed),
-        randomNormalDistribution(random(seed)),
-        randomNormalDistribution(random(random(seed))),
-    ));
+    let x = randomNormalDistribution(seed);
+    let y = randomNormalDistribution(x);
+    let z = randomNormalDistribution(y);
+    return normalize(vec3f(x, y, z));
 }
 `
 
@@ -213,7 +209,6 @@ const main = async (): Promise<void> => {
         alert('no WebGPU device')
         return
     }
-    device.addEventListener('uncapturederror', event => console.error(event.error.message))
     console.debug(device)
 
     canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -226,6 +221,7 @@ const main = async (): Promise<void> => {
         canvas.width = window.innerWidth * dpr
         canvas.height = window.innerHeight * dpr
         resolution = [canvas.width * renderScale, canvas.height * renderScale]
+        frame = 0
         console.debug('resize', [canvas.width, canvas.height], resolution)
     }
     window.addEventListener('resize', resize)
@@ -278,6 +274,13 @@ const compute = () => {
     writeUniforms()
     pass.dispatchWorkgroups(Math.ceil(resolution[0] / workgroupSize[0]), Math.ceil(resolution[1] / workgroupSize[1]))
     pass.end()
+
+    commandEncoder.copyTextureToTexture(
+        { texture: computeOutputTexture },
+        { texture: computeAccTexture },
+        { width: computeOutputTextureSize, height: computeOutputTextureSize }
+    )
+
     device.queue.submit([commandEncoder.finish()])
 }
 
@@ -332,9 +335,10 @@ struct RayCast {
     distance: f32,
 }
 
-@group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(1) var<uniform> uniforms: Uniforms;
-@group(0) @binding(2) var<storage, read> store: Storage;
+@group(0) @binding(0) var acc: texture_storage_2d<rgba16float, read>;
+@group(0) @binding(1) var out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var<uniform> uniforms: Uniforms;
+@group(0) @binding(3) var<storage, read> store: Storage;
 
 @compute @workgroup_size(${workgroupSize.join(',')})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -342,12 +346,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         return;
     }
     let pixelPos = vec3f(gid).xy;
-    var seed = random(uniforms.frame);
-    seed = random(seed * random(pixelPos.x));
-    seed = random(seed * random(pixelPos.y));
+    var seed = random(pixelPos * uniforms.frame);
 
     let cameraRay = cameraRay(pixelPos);
-    let outColor = traceRay(pixelPos, cameraRay, seed);
+    let oldColor = textureLoad(acc, gid.xy).rgb;
+    let color = traceRay(pixelPos, cameraRay, seed);
+    let weight = 1 / (uniforms.frame + 1);
+    let outColor = oldColor * (1 - weight) + color * weight;
     textureStore(out, gid.xy, vec4f(outColor, 1));
 }
 
@@ -377,7 +382,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray, seed_: f32) -> vec3f {
             );
             let normal = transformDir(normalLocal, object.matrixWorld);
             let dir = randomDirection(seed);
-            seed = random(seed);
+            seed = random(vec2f(seed));
             ray = Ray(rayCast.intersection.point, dir);
         } else {
             light.a = 0;
@@ -521,9 +526,14 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     // needed because rgba16float is not the default choice for storage textures
     const layout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: computeOutputTextureFormat } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: { access: 'read-only', format: computeOutputTextureFormat }
+            },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: computeOutputTextureFormat } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
         ]
     })
 
@@ -599,15 +609,22 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     computeOutputTexture = device.createTexture({
         size: [computeOutputTextureSize, computeOutputTextureSize, 1],
         format: computeOutputTextureFormat,
-        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC
+    })
+
+    computeAccTexture = device.createTexture({
+        size: [computeOutputTextureSize, computeOutputTextureSize, 1],
+        format: computeOutputTextureFormat,
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     })
 
     computeBindGroup = device.createBindGroup({
         layout,
         entries: [
-            { binding: 0, resource: computeOutputTexture.createView() },
-            { binding: 1, resource: uniformBuffer },
-            { binding: 2, resource: storageBuffer }
+            { binding: 0, resource: computeAccTexture.createView() },
+            { binding: 1, resource: computeOutputTexture.createView() },
+            { binding: 2, resource: uniformBuffer },
+            { binding: 3, resource: storageBuffer }
         ]
     })
 }
@@ -696,7 +713,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
     renderBindGroup = device.createBindGroup({
         layout: renderPipeline.getBindGroupLayout(0),
         entries: [
-            { binding: 0, resource: computeOutputTexture.createView() },
+            { binding: 0, resource: computeAccTexture.createView() },
             { binding: 1, resource: sampler },
             { binding: 2, resource: uniformBuffer }
         ]
