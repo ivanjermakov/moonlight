@@ -36,7 +36,7 @@ const objects: SceneObject[] = []
 let camera!: CameraConfig
 
 const workgroupSize = [8, 8]
-const renderScale = 1 / 4
+const renderScale = 1 / 2
 const computeOutputTextureSize = 2048
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
@@ -216,11 +216,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       return;
   }
   let pixelPos = vec3f(gid).xy;
-  // let outColor = outUv(pixelPos);
-  // let outColor = outCheckerboard(pixelPos);
   let cameraRay = cameraRay(pixelPos);
-  for (var i = 0u; i < u32(store.objectCount); i++) {
-  // for (var i = 0u; i < 3; i++) {
+  var intersectionObject = 0u;
+  var intersectionDistance = 1e10;
+  // for (var i = 0u; i < u32(store.objectCount); i++) {
+  for (var i = 0u; i < 5; i++) {
       let object = store.objects[i];
       for (var ii = 0u; ii < u32(object.indexCount); ii++) {
           let indexOffset = u32(object.indexOffset);
@@ -239,13 +239,22 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
               triangle[p] = (vec4f(trianglePosLocal, 1) * object.matrixWorld).xyz;
           }
           let intersection = intersectTriangle(cameraRay, triangle);
-          if (intersection.hit) {
-              textureStore(out, gid.xy, vec4f(f32(i), 0, 0, 1));
-              return;
+          if intersection.hit {
+              let d = distance(intersection.point, cameraRay.origin);
+              if d < intersectionDistance {
+                  intersectionDistance = d;
+                  intersectionObject = i;
+              }
           }
       }
   }
+  if intersectionDistance < 1e10 {
+      textureStore(out, gid.xy, vec4f(f32(intersectionObject) / 10, 0, 0, 1));
+      return;
+  }
   let outColor = vec4f(1, 1, 1, 1);
+  // let outColor = outUv(pixelPos);
+  // let outColor = outCheckerboard(pixelPos);
   textureStore(out, gid.xy, outColor);
 }
 
@@ -256,15 +265,14 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     // default camera transform is -Z forward, 
     // convert from mm to m
     let startLocal = vec3f(
-        -pixelPosNorm.x * sensorSize.x,
+        pixelPosNorm.x * sensorSize.x,
         pixelPosNorm.y * sensorSize.y,
-        -store.camera.focalLength,
+        store.camera.focalLength,
     ) / 1000;
     return Ray(
         (vec4f(startLocal, 1) * store.camera.matrixWorld).xyz,
         normalize((vec4f(startLocal, 0) * store.camera.matrixRotation).xyz),
     );
-    // return Ray((vec4f(startLocal, 1) * store.camera.matrixWorld).xyz, normalize(startLocal));
 }
 
 // adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
