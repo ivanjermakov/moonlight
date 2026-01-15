@@ -1,4 +1,13 @@
-import { BufferAttribute, BufferGeometry, Camera, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera } from 'three'
+import {
+    BufferAttribute,
+    BufferGeometry,
+    Camera,
+    Matrix4,
+    Mesh,
+    MeshStandardMaterial,
+    PerspectiveCamera,
+    Quaternion
+} from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import './index.css'
 
@@ -15,9 +24,10 @@ type SceneObject = {
 
 type CameraConfig = {
     camera: Camera
+    matrixWorld: Matrix4
+    matrixRotation: Matrix4
     sensorWidth: number
     focalLength: number
-    matrixWorld: Matrix4
 }
 
 const materials: { [name: string]: MeshStandardMaterial } = {}
@@ -57,12 +67,26 @@ struct Storage {
     normal: array<f32, ${meshArraySize}>,
     uv: array<f32, ${meshArraySize}>,
     objects: array<SceneObject, ${objectArraySize}>,
+    camera: Camera,
     objectCount: u32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
 }
 struct SceneObject {
+    matrixWorld: mat4x4f,
     indexOffset: f32,
     vertexOffset: f32,
+    p1: f32,
+    p2: f32,
+}
+struct Camera {
     matrixWorld: mat4x4f,
+    matrixRotation: mat4x4f,
+    sensorWidth: f32,
+    focalLength: f32,
+    p1: f32,
+    p2: f32,
 }
 struct Uniforms {
     outSize: vec2f,
@@ -87,14 +111,14 @@ const main = async (): Promise<void> => {
             const object = {
                 mesh: o,
                 index: geometry.index!,
-                position: geometry.attributes['position'],
-                normal: geometry.attributes['position'],
-                uv: geometry.attributes['uv'],
+                position: geometry.attributes.position,
+                normal: geometry.attributes.position,
+                uv: geometry.attributes.uv,
                 indexOffset,
                 vertexOffset,
                 matrixWorld: o.matrixWorld
             }
-            if (!(object.position.count == object.normal.count && object.position.count == object.uv.count)) {
+            if (!(object.position.count === object.normal.count && object.position.count === object.uv.count)) {
                 console.warn('inconsistent buffer size', object)
                 return
             }
@@ -103,17 +127,20 @@ const main = async (): Promise<void> => {
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
+            const quat = new Quaternion()
+            const matrixRotation = new Matrix4().makeRotationFromQuaternion(o.getWorldQuaternion(quat))
             camera = {
                 camera: o,
                 sensorWidth: o.filmGauge,
                 focalLength: o.getFocalLength(),
-                matrixWorld: o.matrixWorld
+                matrixWorld: o.matrixWorld,
+                matrixRotation
             }
         }
     })
-    console.log(objects)
-    console.log(materials)
-    console.log(camera)
+    console.debug(objects)
+    console.debug(materials)
+    console.debug(camera)
 
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
@@ -163,6 +190,11 @@ const initCompute = async () => {
         code: wgsl`
 ${commons}
 
+struct Ray {
+    start: vec3f,
+    dir: vec3f,
+}
+
 @group(0) @binding(0) var out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;
 @group(0) @binding(2) var<storage, read> store: Storage;
@@ -172,9 +204,27 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   _ = store;
   if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) { return; }
   let pixelPos = vec3f(gid).xy;
-  let outColor = outUv(pixelPos);
+  // let outColor = outUv(pixelPos);
   // let outColor = outCheckerboard(pixelPos);
+  let cameraRay = cameraRay(pixelPos);
+  let outColor = vec4f(cameraRay.dir, 1);
   textureStore(out, gid.xy, outColor);
+}
+
+fn cameraRay(pixelPos: vec2f) -> Ray {
+    let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
+    let sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspectRatio);
+    let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
+    // camera without transform is pointing at -Y, up is +Z
+    let startLocal = vec3f(
+        pixelPosNorm.x * sensorSize.x,
+        pixelPosNorm.y * sensorSize.y,
+        -store.camera.focalLength,
+    );
+    return Ray(
+        (vec4f(startLocal, 1) * store.camera.matrixWorld).xyz,
+        normalize((vec4f(startLocal, 0) * store.camera.matrixRotation).xyz),
+    );
 }
 
 fn outUv(pixelPos: vec2f) -> vec4f {
@@ -216,46 +266,46 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    // index: array<f32, ${meshArraySize}>,
-    // position: array<f32, ${meshArraySize}>,
-    // normal: array<f32, ${meshArraySize}>,
-    // uv: array<f32, ${meshArraySize}>,
-    // objects: array<SceneObject, ${objectArraySize}>,
-    // objectCount: u32,
-    //
-    // indexOffset: f32,
-    // vertexOffset: f32,
-    // matrixWorld: mat4x4f,
-
     const indexArray = new Float32Array(meshArraySize)
     const positionArray = new Float32Array(meshArraySize)
     const normalArray = new Float32Array(meshArraySize)
     const uvArray = new Float32Array(meshArraySize)
-    const objectArray: number[][] = []
+    const objectArray: number[] = []
     for (const o of objects) {
         indexArray.set(o.index.array, o.indexOffset)
         positionArray.set(o.position.array, o.vertexOffset)
         normalArray.set(o.normal.array, o.vertexOffset)
         uvArray.set(o.uv.array, o.vertexOffset)
-        objectArray.push([o.indexOffset, o.vertexOffset, ...o.matrixWorld.toArray()])
+        objectArray.push(...o.matrixWorld.toArray(), o.indexOffset, o.vertexOffset, 0, 0)
     }
-    const objectByteLength = new Float32Array(objectArray[0]).byteLength
-    const objectsTypedArray = new Float32Array(objectByteLength * objectArraySize)
-    objectsTypedArray.set(objectArray.flat())
-    const storageBufferArray = new Float32Array([
+    const objectsTypedArray = new Float32Array(20 * objectArraySize)
+    objectsTypedArray.set(objectArray)
+    const cameraArray = [
+        ...camera.matrixWorld.toArray(),
+        ...camera.matrixRotation.toArray(),
+        camera.sensorWidth,
+        camera.focalLength,
+        0,
+        0
+    ]
+    const storageBufferArray = [
         ...indexArray,
         ...positionArray,
         ...normalArray,
         ...uvArray,
         ...objectsTypedArray,
-        objects.length
-    ])
-    console.log(storageBufferArray)
+        ...cameraArray,
+        objects.length,
+        0,
+        0,
+        0
+    ]
+    console.debug(storageBufferArray)
     const storageBuffer = device.createBuffer({
-        size: storageBufferArray.byteLength,
+        size: storageBufferArray.length * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     })
-    device.queue.writeBuffer(storageBuffer, 0, storageBufferArray)
+    device.queue.writeBuffer(storageBuffer, 0, new Float32Array(storageBufferArray))
 
     computeOutputTexture = device.createTexture({
         size: [computeOutputTextureSize, computeOutputTextureSize, 1],
