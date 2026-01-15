@@ -25,7 +25,7 @@ type SceneObject = {
 type CameraConfig = {
     camera: Camera
     matrixWorld: Matrix4
-    matrixRotation: Matrix4
+    rotation: Quaternion
     sensorWidth: number
     focalLength: number
 }
@@ -82,7 +82,7 @@ struct SceneObject {
 }
 struct Camera {
     matrixWorld: mat4x4f,
-    matrixRotation: mat4x4f,
+    rotation: vec4f,
     sensorWidth: f32,
     focalLength: f32,
     p1: f32,
@@ -127,14 +127,12 @@ const main = async (): Promise<void> => {
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
-            const quat = new Quaternion()
-            const matrixRotation = new Matrix4().makeRotationFromQuaternion(o.getWorldQuaternion(quat))
             camera = {
                 camera: o,
                 sensorWidth: o.filmGauge,
                 focalLength: o.getFocalLength(),
                 matrixWorld: o.matrixWorld,
-                matrixRotation
+                rotation: o.quaternion
             }
         }
     })
@@ -267,7 +265,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
         pixelPosNorm.y * sensorSize.y,
         store.camera.focalLength,
     ));
-    let dir = transformDir(dirLocal, store.camera.matrixRotation);
+    let dir = applyQuaternion(dirLocal, store.camera.rotation);
     return Ray(
         focalPosWorld + dir * store.camera.focalLength / 1000,
         dir,
@@ -287,6 +285,11 @@ fn transformDir(dir: vec3f, mat: mat4x4f) -> vec3f {
     var v4 = vec4f(dir, 0);
     v4 *= mat;
     return v4.xyz;
+}
+
+fn applyQuaternion(dir: vec3f, quat: vec4f) -> vec3f {
+    let t = 2 * cross(quat.xyz, dir);
+    return dir + quat.w * t + cross(quat.xyz, t);
 }
 
 // adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
@@ -380,7 +383,7 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
     objectsTypedArray.set(objectArray)
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
-        ...camera.matrixRotation.toArray(),
+        ...camera.rotation.toArray(),
         camera.sensorWidth,
         // camera.focalLength,
         5,
