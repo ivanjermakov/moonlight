@@ -42,10 +42,11 @@ const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
 
-const renderScale = 1 / 4
-const maxBounces = 4
+const renderScale = 1 / 2
+const aspectRatio = 16 / 9
+const maxBounces = 8
 const workgroupSize = [8, 8]
-const computeOutputTextureSize = 2048
+const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectsArraySize = 128
@@ -122,6 +123,7 @@ struct Uniforms {
     outSize: vec2f,
     renderScale: f32,
     frame: f32,
+    aspectRatio: f32,
 }
 
 fn random() -> u32 {
@@ -280,7 +282,7 @@ const update = async () => {
 }
 
 const writeUniforms = () => {
-    const uniforms = new Float32Array([...resolution, renderScale, frame])
+    const uniforms = new Float32Array([...resolution, renderScale, frame, aspectRatio])
     device.queue.writeBuffer(uniformBuffer, 0, uniforms)
 }
 
@@ -363,12 +365,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
         return;
     }
-    seed = (gid.x + 142462) * (gid.y + 452313) * (u32(uniforms.frame) + 1642431);
+    seed = (gid.x + 142467) * (gid.y + 452316) * (u32(uniforms.frame) + 264243);
     let pixelPos = vec3f(gid).xy;
 
     let cameraRay = cameraRay(pixelPos);
     let color = traceRay(pixelPos, cameraRay);
-    // let color = vec3f(seed);
+    // let color = random3f();
 
     let weight = 1 / (uniforms.frame + 1);
     let oldColor = textureLoad(acc, gid.xy).rgb;
@@ -448,8 +450,14 @@ fn castRay(ray: Ray) -> RayCast {
 }
 
 fn cameraRay(pixelPos: vec2f) -> Ray {
-    let aspectRatio = uniforms.outSize.x / uniforms.outSize.y;
-    let sensorSize = vec2f(store.camera.sensorWidth * aspectRatio, store.camera.sensorWidth);
+    let aspect = uniforms.outSize.x / uniforms.outSize.y;
+    var sensorSize: vec2f;
+    if aspect > uniforms.aspectRatio {
+        let fitHeight = store.camera.sensorWidth / uniforms.aspectRatio;
+        sensorSize = vec2f(fitHeight * aspect, fitHeight);
+    } else {
+        sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspect);
+    }
     let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
     let dirLocal = normalize(vec3f(
