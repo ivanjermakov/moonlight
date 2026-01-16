@@ -213,7 +213,7 @@ const update = async () => {
         const blob = await downCanvas.convertToBlob({ type: 'image/png' })
         const a = document.createElement('a')
         a.href = URL.createObjectURL(blob)
-        a.download = `render-${new Date()
+        a.download = `${sceneName}-${new Date()
             .toISOString()
             .replace(/T/, '_')
             .replace(/:/g, '-')
