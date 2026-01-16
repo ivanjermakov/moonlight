@@ -163,7 +163,7 @@ const main = async (): Promise<void> => {
         canvas.height = window.innerHeight * dpr
         resolution = [canvas.width * renderScale, canvas.height * renderScale]
         frame = 0
-        console.debug('resize', [canvas.width, canvas.height], resolution)
+        console.debug('resize', [canvas.width, canvas.height], resolution, canvas.width / canvas.height)
     }
     window.addEventListener('resize', resize)
     resize()

@@ -38,7 +38,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let color = traceRay(pixelPos, cameraRay);
     // let color = random3f();
 
-    let weight = 1 / (uniforms.frame + 1);
+    if uniforms.frame == 0 {
+        textureStore(out, gid.xy, vec4f(color, 1));
+        return;
+    }
+    let weight = 1 / uniforms.frame;
     let oldColor = textureLoad(acc, gid.xy).rgb;
     let outColor = oldColor * (1 - weight) + color * weight;
     textureStore(out, gid.xy, vec4f(outColor, 1));
