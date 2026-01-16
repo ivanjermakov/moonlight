@@ -54,7 +54,7 @@ const materialsArraySize = 32
 const sceneObjectSize = 24
 const sceneMaterialSize = 8
 type RunMode = 'vsync' | 'busy' | 'single'
-const runMode: RunMode = 'busy'
+const runMode = 'vsync' as RunMode
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -74,6 +74,7 @@ let clipVertexBuffer: GPUBuffer
 
 let frame: number = 0
 let frameStart: number = 0
+let capture = false
 
 const wgsl = String.raw
 
@@ -247,6 +248,13 @@ const main = async (): Promise<void> => {
     window.addEventListener('resize', resize)
     resize()
 
+    window.addEventListener('keydown', async e => {
+        if (e.code === 'KeyE') {
+            capture = true
+            if (runMode === 'single') await update()
+        }
+    })
+
     await initCompute()
     await initRender()
 
@@ -274,6 +282,25 @@ const update = async () => {
 
     compute()
     draw()
+
+    if (capture) {
+        capture = false
+        const downCanvas = new OffscreenCanvas(canvas.width, canvas.height)
+        const downCtx = downCanvas.getContext('2d')!
+        downCtx.drawImage(canvas, 0, 0)
+        const blob = await downCanvas.convertToBlob({ type: 'image/png' })
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = `render-${new Date()
+            .toISOString()
+            .replace(/T/, '_')
+            .replace(/:/g, '-')
+            .replace(/\..+/, '')
+            .replace(/-/, '-')}.png`
+        a.click()
+        URL.revokeObjectURL(a.href)
+    }
+
     await device.queue.onSubmittedWorkDone()
 
     document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
