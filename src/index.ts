@@ -80,7 +80,7 @@ const wgsl = String.raw
 
 const commons = wgsl`
 const pi = 3.141592653589793;
-const epsilon = 1e-7;
+const epsilon = 1e-5;
 
 var<private> seed = 0u;
 
@@ -416,7 +416,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let object = store.objects[rayCast.object];
             let material = store.materials[u32(object.material)];
             if material.emissiveColor.a > 1 {
-                light.a += material.emissiveColor.a;
+                light.a += material.emissiveColor.a * 2;
                 break;
             } else {
                 light = vec4f(light.rgb * material.baseColor.rgb, light.a);
@@ -428,11 +428,18 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 store.normal[3 * firstVertIdx] + 1,
                 store.normal[3 * firstVertIdx] + 2,
             );
+            let roughness = .9;
             let normal = transformDir(normalLocal, object.matrixWorld);
-            let dir = randomDirection();
-            ray = Ray(rayCast.intersection.point, dir);
+            let reflection = ray.dir - 2 * dot(ray.dir, normal) * normal;
+            var scatter = randomDirection();
+            if dot(normal, scatter) < 0 {
+                scatter -= 1;
+            }
+            let dir = roughness * scatter + (1 - roughness) * reflection;
+            ray = Ray(rayCast.intersection.point + dir * epsilon, dir);
         } else {
-            light.a = 0;
+            let ambientEmission = .1;
+            light.a = ambientEmission;
             break;
         }
     }
