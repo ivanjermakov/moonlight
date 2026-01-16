@@ -385,6 +385,7 @@ struct Intersection {
 
 struct RayCast {
     intersection: Intersection,
+    normal: vec3f,
     object: u32,
     face: u32,
     distance: f32,
@@ -435,33 +436,16 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             light *= material.baseColor.rgb;
 
-            // TODO: smooth shading
-            let indexOffset = u32(object.indexOffset);
-            let vertexOffset = u32(object.vertexOffset);
-            var normalLocal = vec3f();
-            for (var v = 0u; v < 3; v++) {
-                let triIndex = u32(store.index[indexOffset + 3 * rayCast.face + v]);
-                let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let vertexNormal = vec3f(
-                    store.normal[triIndexGlobal],
-                    store.normal[triIndexGlobal + 1],
-                    store.normal[triIndexGlobal + 2],
-                );
-                normalLocal += vertexNormal;
-            }
-            normalLocal = normalize(normalLocal);
-            let normal = transformDir(normalLocal, object.matrixWorld);
-
-            let reflection = ray.dir - 2 * dot(ray.dir, normal) * normal;
+            let reflection = ray.dir - 2 * dot(ray.dir, rayCast.normal) * rayCast.normal;
             let roughness = material.roughness;
             // let roughness = 1.;
             var scatter = randomDirection();
-            if dot(normal, scatter) < 0 {
+            if dot(rayCast.normal, scatter) < 0 {
                 scatter *= -1;
             }
             let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
 
-            let offset = normal * 0.00;
+            let offset = rayCast.normal * 0.00;
             ray = Ray(rayCast.intersection.point + offset, dir);
         } else {
             emission = 0;
@@ -473,12 +457,32 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 }
 
 fn castRay(ray: Ray) -> RayCast {
-    var rayCast = RayCast(Intersection(), 0u, 0u, maxDistance);
+    var rayCast = RayCast();
+    rayCast.distance = maxDistance;
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
         let indexOffset = u32(object.indexOffset);
         let vertexOffset = u32(object.vertexOffset);
         for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
+            // TODO: smooth shading
+            var normalLocal = vec3f();
+            for (var v = 0u; v < 3; v++) {
+                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
+                let triIndexGlobal = 3 * (vertexOffset + triIndex);
+                let vertexNormal = vec3f(
+                    store.normal[triIndexGlobal],
+                    store.normal[triIndexGlobal + 1],
+                    store.normal[triIndexGlobal + 2],
+                );
+                normalLocal += vertexNormal;
+            }
+            normalLocal = normalize(normalLocal);
+            let normal = transformDir(normalLocal, object.matrixWorld);
+
+            if dot(normal, ray.dir) > 0 {
+                continue;
+            }
+
             var triangle: array<vec3f, 3>;
             for (var v = 0u; v < 3; v++) {
                 let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
@@ -495,6 +499,7 @@ fn castRay(ray: Ray) -> RayCast {
                 let d = distance(intersection.point, ray.origin);
                 if d < rayCast.distance {
                     rayCast.intersection = intersection;
+                    rayCast.normal = normal;
                     rayCast.object = i;
                     rayCast.face = fi;
                     rayCast.distance = d;
