@@ -60,6 +60,8 @@ const sceneObjectSize = 24
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
+type SceneName = 'cornell-box'
+const sceneName = 'cornell-box' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -82,7 +84,7 @@ let frameStart: number = 0
 let capture = false
 
 const main = async (): Promise<void> => {
-    const gltfPath = '/scene.glb'
+    const gltfPath = `/${sceneName}.glb`
     const gltfData = await (await fetch(gltfPath)).arrayBuffer()
     const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
     let indexOffset = 0
