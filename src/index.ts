@@ -28,6 +28,8 @@ type SceneMaterial = {
     material: MeshStandardMaterial
     baseColor: Color
     emissive: Color
+    metallic: number
+    roughness: number
 }
 
 type CameraConfig = {
@@ -52,7 +54,7 @@ const meshArraySize = 8192
 const objectsArraySize = 128
 const materialsArraySize = 32
 const sceneObjectSize = 24
-const sceneMaterialSize = 8
+const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
 
@@ -111,6 +113,10 @@ struct SceneObject {
 struct SceneMaterial {
     baseColor: vec4f,
     emissiveColor: vec4f,
+    metallic: f32,
+    roughness: f32,
+    p1: f32,
+    p2: f32,
 }
 struct Camera {
     matrixWorld: mat4x4f,
@@ -178,7 +184,9 @@ const main = async (): Promise<void> => {
                 materials.push({
                     material,
                     baseColor: material.color,
-                    emissive: material.emissive
+                    emissive: material.emissive,
+                    metallic: material.metalness,
+                    roughness: material.roughness
                 })
             }
             const geometry = o.geometry
@@ -406,7 +414,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
-    var light = vec4f(1, 1, 1, 0);
+    let ambientEmission = 1.;
+
+    var light = vec3f(1);
+    var emission = ambientEmission;
     var ray = rayStart;
 
     for (var bounce = 0u; bounce < maxBounces; bounce++) {
@@ -415,12 +426,14 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
         if rayCast.intersection.hit {
             let object = store.objects[rayCast.object];
             let material = store.materials[u32(object.material)];
+
             if material.emissiveColor.a > 1 {
-                light.a += material.emissiveColor.a * 2;
+                emission += material.emissiveColor.a;
                 break;
-            } else {
-                light = vec4f(light.rgb * material.baseColor.rgb, light.a);
             }
+
+            light *= material.baseColor.rgb;
+
             // TODO: smooth shading
             let firstVertIdx = u32(object.vertexOffset + store.index[u32(object.indexOffset) + rayCast.face]);
             let normalLocal = vec3f(
@@ -428,23 +441,25 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 store.normal[3 * firstVertIdx] + 1,
                 store.normal[3 * firstVertIdx] + 2,
             );
-            let roughness = .9;
-            let normal = transformDir(normalLocal, object.matrixWorld);
+            let normal = normalize(transformDir(normalLocal, object.matrixWorld));
             let reflection = ray.dir - 2 * dot(ray.dir, normal) * normal;
+
+            // let roughness = material.roughness;
+            let roughness = 1.;
             var scatter = randomDirection();
             if dot(normal, scatter) < 0 {
                 scatter -= 1;
             }
             let dir = roughness * scatter + (1 - roughness) * reflection;
-            ray = Ray(rayCast.intersection.point + dir * epsilon, dir);
+
+            ray = Ray(rayCast.intersection.point - ray.dir * 0.001, dir);
         } else {
-            let ambientEmission = .1;
-            light.a = ambientEmission;
+            emission = 0;
             break;
         }
     }
 
-    return light.rgb * light.a;
+    return light * emission;
 }
 
 fn castRay(ray: Ray) -> RayCast {
@@ -634,7 +649,16 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
 
     const materialsArray: number[] = []
     for (const m of materials) {
-        materialsArray.push(...m.baseColor.toArray(), 1, ...m.emissive, m.material.emissiveIntensity)
+        materialsArray.push(
+            ...m.baseColor.toArray(),
+            1,
+            ...m.emissive,
+            m.material.emissiveIntensity,
+            m.metallic,
+            m.roughness,
+            0,
+            0
+        )
     }
     const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)
     materialsTypedArray.set(materialsArray)
