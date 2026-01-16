@@ -80,6 +80,8 @@ const commons = wgsl`
 const pi = 3.141592653589793;
 const epsilon = 1e-7;
 
+var<private> seed = 0u;
+
 struct Storage {
     index: array<f32, ${meshArraySize}>,
     position: array<f32, ${meshArraySize}>,
@@ -122,23 +124,39 @@ struct Uniforms {
     frame: f32,
 }
 
-fn random(v: vec2f) -> f32 {
-    return fract(sin(dot(v.xy, vec2f(12.9898, 78.233))) * 43758.5453);
+fn random() -> u32 {
+    seed = seed * 747796405 + 2891336453;
+    var result = ((seed >> ((seed >> 28) + 4)) ^ seed) * 277803737;
+    result = (result >> 22) ^ result;
+    return result;
+}
+
+fn randomf() -> f32 {
+    return f32(random()) / 4294967295;
+}
+
+fn random2f() -> vec2f {
+    return vec2f(randomf(), randomf());
+}
+
+fn random3f() -> vec3f {
+    return vec3f(randomf(), randomf(), randomf());
 }
 
 // https://stackoverflow.com/a/6178290
-fn randomNormalDistribution(seed: f32) -> f32 {
-    let theta = 2 * pi * random(vec2f(seed));
-    let rho = sqrt(-2 * log(random(vec2f(seed))));
+fn randomNormalDistribution() -> f32 {
+    let theta = 2 * pi * randomf();
+    let rho = sqrt(-2 * log(randomf()));
     return rho * cos(theta);
 }
 
 // https://math.stackexchange.com/a/1585996
-fn randomDirection(seed: f32) -> vec3f {
-    let x = randomNormalDistribution(seed);
-    let y = randomNormalDistribution(x);
-    let z = randomNormalDistribution(y);
-    return normalize(vec3f(x, y, z));
+fn randomDirection() -> vec3f {
+    return normalize(vec3f(
+        randomNormalDistribution(),
+        randomNormalDistribution(),
+        randomNormalDistribution(),
+    ));
 }
 `
 
@@ -345,19 +363,20 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
         return;
     }
+    seed = (gid.x + 142462) * (gid.y + 452313) * (u32(uniforms.frame) + 1642431);
     let pixelPos = vec3f(gid).xy;
-    var seed = random(pixelPos * uniforms.frame);
 
     let cameraRay = cameraRay(pixelPos);
-    let oldColor = textureLoad(acc, gid.xy).rgb;
-    let color = traceRay(pixelPos, cameraRay, seed);
+    let color = traceRay(pixelPos, cameraRay);
+    // let color = vec3f(seed);
+
     let weight = 1 / (uniforms.frame + 1);
+    let oldColor = textureLoad(acc, gid.xy).rgb;
     let outColor = oldColor * (1 - weight) + color * weight;
     textureStore(out, gid.xy, vec4f(outColor, 1));
 }
 
-fn traceRay(pixelPos: vec2f, rayStart: Ray, seed_: f32) -> vec3f {
-    var seed = seed_;
+fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var light = vec4f(1, 1, 1, 0);
     var ray = rayStart;
 
@@ -381,8 +400,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray, seed_: f32) -> vec3f {
                 store.normal[3 * firstVertIdx] + 2,
             );
             let normal = transformDir(normalLocal, object.matrixWorld);
-            let dir = randomDirection(seed);
-            seed = random(vec2f(seed));
+            let dir = randomDirection();
             ray = Ray(rayCast.intersection.point, dir);
         } else {
             light.a = 0;
