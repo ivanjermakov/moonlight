@@ -60,8 +60,8 @@ const sceneObjectSize = 24
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
-type SceneName = 'cornell-box'
-const sceneName = 'cornell-box' as SceneName
+type SceneName = 'cornell-box' | 'rough-metallic'
+const sceneName = 'rough-metallic' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
