@@ -198,7 +198,7 @@ const main = async (): Promise<void> => {
                 mesh: o,
                 index: geometry.index!,
                 position: geometry.attributes.position,
-                normal: geometry.attributes.position,
+                normal: geometry.attributes.normal,
                 uv: geometry.attributes.uv,
                 indexOffset,
                 vertexOffset,
@@ -414,9 +414,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
-    let ambientEmission = 1.;
+    let ambientEmission = .1;
+    let ambientColor = vec3f(1);
 
-    var light = vec3f(1);
+    var light = vec3f(ambientColor);
     var emission = ambientEmission;
     var ray = rayStart;
 
@@ -435,24 +436,33 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             light *= material.baseColor.rgb;
 
             // TODO: smooth shading
-            let firstVertIdx = u32(object.vertexOffset + store.index[u32(object.indexOffset) + rayCast.face]);
-            let normalLocal = vec3f(
-                store.normal[3 * firstVertIdx],
-                store.normal[3 * firstVertIdx] + 1,
-                store.normal[3 * firstVertIdx] + 2,
-            );
-            let normal = normalize(transformDir(normalLocal, object.matrixWorld));
-            let reflection = ray.dir - 2 * dot(ray.dir, normal) * normal;
+            let indexOffset = u32(object.indexOffset);
+            let vertexOffset = u32(object.vertexOffset);
+            var normalLocal = vec3f();
+            for (var v = 0u; v < 3; v++) {
+                let triIndex = u32(store.index[indexOffset + 3 * rayCast.face + v]);
+                let triIndexGlobal = 3 * (vertexOffset + triIndex);
+                let vertexNormal = vec3f(
+                    store.normal[triIndexGlobal],
+                    store.normal[triIndexGlobal + 1],
+                    store.normal[triIndexGlobal + 2],
+                );
+                normalLocal += vertexNormal;
+            }
+            normalLocal = normalize(normalLocal);
+            let normal = transformDir(normalLocal, object.matrixWorld);
 
-            // let roughness = material.roughness;
-            let roughness = 1.;
+            let reflection = ray.dir - 2 * dot(ray.dir, normal) * normal;
+            let roughness = material.roughness;
+            // let roughness = 1.;
             var scatter = randomDirection();
             if dot(normal, scatter) < 0 {
-                scatter -= 1;
+                scatter *= -1;
             }
-            let dir = roughness * scatter + (1 - roughness) * reflection;
+            let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
 
-            ray = Ray(rayCast.intersection.point - ray.dir * 0.001, dir);
+            let offset = normal * 0.00;
+            ray = Ray(rayCast.intersection.point + offset, dir);
         } else {
             emission = 0;
             break;
@@ -468,20 +478,17 @@ fn castRay(ray: Ray) -> RayCast {
         let object = store.objects[i];
         let indexOffset = u32(object.indexOffset);
         let vertexOffset = u32(object.vertexOffset);
-        for (var fi = 0u; fi < u32(object.indexCount); fi+=3) {
-            let triIndex = array<u32, 3>(
-                u32(store.index[indexOffset + fi]),
-                u32(store.index[indexOffset + fi + 1]),
-                u32(store.index[indexOffset + fi + 2]),
-            );
+        for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
             var triangle: array<vec3f, 3>;
-            for (var p = 0u; p < 3; p++) {
+            for (var v = 0u; v < 3; v++) {
+                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
+                let triIndexGlobal = 3 * (vertexOffset + triIndex);
                 let trianglePosLocal = vec3f(
-                    store.position[3 * (vertexOffset + triIndex[p])],
-                    store.position[3 * (vertexOffset + triIndex[p]) + 1],
-                    store.position[3 * (vertexOffset + triIndex[p]) + 2],
+                    store.position[triIndexGlobal],
+                    store.position[triIndexGlobal + 1],
+                    store.position[triIndexGlobal + 2],
                 );
-                triangle[p] = transformPoint(trianglePosLocal, object.matrixWorld);
+                triangle[v] = transformPoint(trianglePosLocal, object.matrixWorld);
             }
             let intersection = intersectTriangle(ray, triangle);
             if intersection.hit {
