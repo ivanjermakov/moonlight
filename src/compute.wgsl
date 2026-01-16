@@ -11,6 +11,7 @@ struct Ray {
 struct Intersection {
     hit: bool,
     point: vec3f,
+    uv: vec2f,
 }
 
 struct RayCast {
@@ -113,8 +114,7 @@ fn castRay(ray: Ray) -> RayCast {
             if intersection.hit {
                 let d = distance(intersection.point, ray.origin);
                 if d < rayCast.distance {
-                    // TODO: smooth shading
-                    var normalLocal = vec3f();
+                    var triNormals: array<vec3f, 3>;
                     for (var v = 0u; v < 3; v++) {
                         let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
                         let triIndexGlobal = 3 * (vertexOffset + triIndex);
@@ -123,9 +123,12 @@ fn castRay(ray: Ray) -> RayCast {
                             store.normal[triIndexGlobal + 1],
                             store.normal[triIndexGlobal + 2],
                         );
-                        normalLocal += vertexNormal;
+                        triNormals[v] = vertexNormal;
                     }
-                    normalLocal = normalize(normalLocal);
+                    let u = intersection.uv.x;
+                    let v = intersection.uv.y;
+                    // Vector3 shadingNormal = normals[0] + (normals[1] - normals[0]) * u + (normals[2] - normals[0]) * v;
+                    let normalLocal = normalize(triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v);
                     let normal = transformDir(normalLocal, object.matrixWorld);
 
                     if dot(normal, ray.dir) > 0 {
@@ -190,7 +193,7 @@ fn applyQuaternion(dir: vec3f, quat: vec4f) -> vec3f {
 
 // adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
 fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
-    var intersection = Intersection(false, vec3f());
+    var intersection = Intersection();
 	let e1 = triangle[1] - triangle[0];
 	let e2 = triangle[2] - triangle[0];
 
@@ -221,6 +224,7 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
 
     intersection.hit = true;
     intersection.point = ray.origin + ray.dir * t;
+    intersection.uv = vec2f(u, v);
     return intersection;
 }
 
