@@ -464,25 +464,6 @@ fn castRay(ray: Ray) -> RayCast {
         let indexOffset = u32(object.indexOffset);
         let vertexOffset = u32(object.vertexOffset);
         for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
-            // TODO: smooth shading
-            var normalLocal = vec3f();
-            for (var v = 0u; v < 3; v++) {
-                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let vertexNormal = vec3f(
-                    store.normal[triIndexGlobal],
-                    store.normal[triIndexGlobal + 1],
-                    store.normal[triIndexGlobal + 2],
-                );
-                normalLocal += vertexNormal;
-            }
-            normalLocal = normalize(normalLocal);
-            let normal = transformDir(normalLocal, object.matrixWorld);
-
-            if dot(normal, ray.dir) > 0 {
-                continue;
-            }
-
             var triangle: array<vec3f, 3>;
             for (var v = 0u; v < 3; v++) {
                 let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
@@ -498,6 +479,25 @@ fn castRay(ray: Ray) -> RayCast {
             if intersection.hit {
                 let d = distance(intersection.point, ray.origin);
                 if d < rayCast.distance {
+                    // TODO: smooth shading
+                    var normalLocal = vec3f();
+                    for (var v = 0u; v < 3; v++) {
+                        let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
+                        let triIndexGlobal = 3 * (vertexOffset + triIndex);
+                        let vertexNormal = vec3f(
+                            store.normal[triIndexGlobal],
+                            store.normal[triIndexGlobal + 1],
+                            store.normal[triIndexGlobal + 2],
+                        );
+                        normalLocal += vertexNormal;
+                    }
+                    normalLocal = normalize(normalLocal);
+                    let normal = transformDir(normalLocal, object.matrixWorld);
+
+                    if dot(normal, ray.dir) > 0 {
+                        continue;
+                    }
+
                     rayCast.intersection = intersection;
                     rayCast.normal = normal;
                     rayCast.object = i;
@@ -546,7 +546,7 @@ fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
 fn transformDir(dir: vec3f, mat: mat4x4f) -> vec3f {
     var v4 = vec4f(dir, 0);
     v4 = mat * v4;
-    return v4.xyz;
+    return normalize(v4.xyz);
 }
 
 fn applyQuaternion(dir: vec3f, quat: vec4f) -> vec3f {
