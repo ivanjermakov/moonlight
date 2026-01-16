@@ -10,7 +10,10 @@ import {
     Quaternion
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
+import commonsWgsl from './commons.wgsl?raw'
+import computeWgsl from './compute.wgsl?raw'
 import './index.css'
+import renderWgsl from './render.wgsl?raw'
 
 type SceneObject = {
     mesh: Mesh
@@ -77,97 +80,6 @@ let clipVertexBuffer: GPUBuffer
 let frame: number = 0
 let frameStart: number = 0
 let capture = false
-
-const wgsl = String.raw
-
-const commons = wgsl`
-const pi = 3.141592653589793;
-const epsilon = 1e-5;
-
-var<private> seed = 0u;
-
-struct Storage {
-    index: array<f32, ${meshArraySize}>,
-    position: array<f32, ${meshArraySize}>,
-    normal: array<f32, ${meshArraySize}>,
-    uv: array<f32, ${meshArraySize}>,
-    objects: array<SceneObject, ${objectsArraySize}>,
-    materials: array<SceneMaterial, ${materialsArraySize}>,
-    camera: Camera,
-    objectCount: f32,
-    p1: f32,
-    p2: f32,
-    p3: f32,
-}
-struct SceneObject {
-    matrixWorld: mat4x4f,
-    indexOffset: f32,
-    indexCount: f32,
-    vertexOffset: f32,
-    vertexCount: f32,
-    material: f32,
-    p1: f32,
-    p2: f32,
-    p3: f32,
-}
-struct SceneMaterial {
-    baseColor: vec4f,
-    emissiveColor: vec4f,
-    metallic: f32,
-    roughness: f32,
-    p1: f32,
-    p2: f32,
-}
-struct Camera {
-    matrixWorld: mat4x4f,
-    rotation: vec4f,
-    sensorWidth: f32,
-    focalLength: f32,
-    p1: f32,
-    p2: f32,
-}
-struct Uniforms {
-    outSize: vec2f,
-    renderScale: f32,
-    frame: f32,
-    aspectRatio: f32,
-}
-
-fn random() -> u32 {
-    seed = seed * 747796405 + 2891336453;
-    var result = ((seed >> ((seed >> 28) + 4)) ^ seed) * 277803737;
-    result = (result >> 22) ^ result;
-    return result;
-}
-
-fn randomf() -> f32 {
-    return f32(random()) / 4294967295;
-}
-
-fn random2f() -> vec2f {
-    return vec2f(randomf(), randomf());
-}
-
-fn random3f() -> vec3f {
-    return vec3f(randomf(), randomf(), randomf());
-}
-
-// https://stackoverflow.com/a/6178290
-fn randomNormalDistribution() -> f32 {
-    let theta = 2 * pi * randomf();
-    let rho = sqrt(-2 * log(randomf()));
-    return rho * cos(theta);
-}
-
-// https://math.stackexchange.com/a/1585996
-fn randomDirection() -> vec3f {
-    return normalize(vec3f(
-        randomNormalDistribution(),
-        randomNormalDistribution(),
-        randomNormalDistribution(),
-    ));
-}
-`
 
 const main = async (): Promise<void> => {
     const gltfPath = '/scene.glb'
@@ -367,247 +279,7 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
 
 const initCompute = async () => {
     const computeModule = device.createShaderModule({
-        code: wgsl`
-${commons}
-
-const maxDistance = 1e10;
-const maxBounces = ${maxBounces};
-
-struct Ray {
-    origin: vec3f,
-    dir: vec3f,
-}
-
-struct Intersection {
-    hit: bool,
-    point: vec3f,
-}
-
-struct RayCast {
-    intersection: Intersection,
-    normal: vec3f,
-    object: u32,
-    face: u32,
-    distance: f32,
-}
-
-@group(0) @binding(0) var acc: texture_storage_2d<rgba16float, read>;
-@group(0) @binding(1) var out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(2) var<uniform> uniforms: Uniforms;
-@group(0) @binding(3) var<storage, read> store: Storage;
-
-@compute @workgroup_size(${workgroupSize.join(',')})
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-    if (gid.x >= u32(uniforms.outSize.x) || gid.y >= u32(uniforms.outSize.y)) {
-        return;
-    }
-    seed = (gid.x + 142467) * (gid.y + 452316) * (u32(uniforms.frame) + 264243);
-    let pixelPos = vec3f(gid).xy;
-
-    let cameraRay = cameraRay(pixelPos);
-    let color = traceRay(pixelPos, cameraRay);
-    // let color = random3f();
-
-    let weight = 1 / (uniforms.frame + 1);
-    let oldColor = textureLoad(acc, gid.xy).rgb;
-    let outColor = oldColor * (1 - weight) + color * weight;
-    textureStore(out, gid.xy, vec4f(outColor, 1));
-}
-
-fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
-    let ambientEmission = .1;
-    let ambientColor = vec3f(1);
-
-    var light = vec3f(ambientColor);
-    var emission = ambientEmission;
-    var ray = rayStart;
-
-    for (var bounce = 0u; bounce < maxBounces; bounce++) {
-        let rayCast = castRay(ray);
-
-        if rayCast.intersection.hit {
-            let object = store.objects[rayCast.object];
-            let material = store.materials[u32(object.material)];
-
-            if material.emissiveColor.a > 1 {
-                emission += material.emissiveColor.a;
-                break;
-            }
-
-            light *= material.baseColor.rgb;
-
-            let reflection = ray.dir - 2 * dot(ray.dir, rayCast.normal) * rayCast.normal;
-            let roughness = material.roughness;
-            // let roughness = 1.;
-            var scatter = randomDirection();
-            if dot(rayCast.normal, scatter) < 0 {
-                scatter *= -1;
-            }
-            let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
-
-            let offset = rayCast.normal * 0.00;
-            ray = Ray(rayCast.intersection.point + offset, dir);
-        } else {
-            emission = 0;
-            break;
-        }
-    }
-
-    return light * emission;
-}
-
-fn castRay(ray: Ray) -> RayCast {
-    var rayCast = RayCast();
-    rayCast.distance = maxDistance;
-    for (var i = 0u; i < u32(store.objectCount); i++) {
-        let object = store.objects[i];
-        let indexOffset = u32(object.indexOffset);
-        let vertexOffset = u32(object.vertexOffset);
-        for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
-            var triangle: array<vec3f, 3>;
-            for (var v = 0u; v < 3; v++) {
-                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let trianglePosLocal = vec3f(
-                    store.position[triIndexGlobal],
-                    store.position[triIndexGlobal + 1],
-                    store.position[triIndexGlobal + 2],
-                );
-                triangle[v] = transformPoint(trianglePosLocal, object.matrixWorld);
-            }
-            let intersection = intersectTriangle(ray, triangle);
-            if intersection.hit {
-                let d = distance(intersection.point, ray.origin);
-                if d < rayCast.distance {
-                    // TODO: smooth shading
-                    var normalLocal = vec3f();
-                    for (var v = 0u; v < 3; v++) {
-                        let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                        let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                        let vertexNormal = vec3f(
-                            store.normal[triIndexGlobal],
-                            store.normal[triIndexGlobal + 1],
-                            store.normal[triIndexGlobal + 2],
-                        );
-                        normalLocal += vertexNormal;
-                    }
-                    normalLocal = normalize(normalLocal);
-                    let normal = transformDir(normalLocal, object.matrixWorld);
-
-                    if dot(normal, ray.dir) > 0 {
-                        continue;
-                    }
-
-                    rayCast.intersection = intersection;
-                    rayCast.normal = normal;
-                    rayCast.object = i;
-                    rayCast.face = fi;
-                    rayCast.distance = d;
-                }
-            }
-        }
-    }
-    return rayCast;
-}
-
-fn cameraRay(pixelPos: vec2f) -> Ray {
-    let aspect = uniforms.outSize.x / uniforms.outSize.y;
-    var sensorSize: vec2f;
-    if aspect > uniforms.aspectRatio {
-        let fitHeight = store.camera.sensorWidth / uniforms.aspectRatio;
-        sensorSize = vec2f(fitHeight * aspect, fitHeight);
-    } else {
-        sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspect);
-    }
-    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
-    let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
-    let dirLocal = normalize(vec3f(
-        pixelPosNorm.x * sensorSize.x,
-        pixelPosNorm.y * sensorSize.y,
-        -store.camera.focalLength,
-    ));
-    let dir = applyQuaternion(dirLocal, store.camera.rotation);
-    return Ray(
-        // convert from mm to m
-        focalPosWorld,
-        dir,
-    );
-}
-
-fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
-    var v4 = vec4f(point, 1);
-    v4 = mat * v4;
-    if v4.w != 0 {
-        return v4.xyz / v4.w;
-    }
-    return v4.xyz;
-}
-
-fn transformDir(dir: vec3f, mat: mat4x4f) -> vec3f {
-    var v4 = vec4f(dir, 0);
-    v4 = mat * v4;
-    return normalize(v4.xyz);
-}
-
-fn applyQuaternion(dir: vec3f, quat: vec4f) -> vec3f {
-    let t = 2 * cross(quat.xyz, dir);
-    return dir + quat.w * t + cross(quat.xyz, t);
-}
-
-// adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
-fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
-    var intersection = Intersection(false, vec3f());
-	let e1 = triangle[1] - triangle[0];
-	let e2 = triangle[2] - triangle[0];
-
-	let ray_cross_e2 = cross(ray.dir, e2);
-	let det = dot(e1, ray_cross_e2);
-
-	if det > -epsilon && det < epsilon {
-		return intersection;
-	}
-
-	let inv_det = 1 / det;
-	let s = ray.origin - triangle[0];
-	let u = inv_det * dot(s, ray_cross_e2);
-	if u < 0 || u > 1 {
-		return intersection;
-	}
-
-	let s_cross_e1 = cross(s, e1);
-	let v = inv_det * dot(ray.dir, s_cross_e1);
-	if v < 0 || u + v > 1 {
-		return intersection;
-	}
-
-	let t = inv_det * dot(e2, s_cross_e1);
-	if t <= epsilon {
-        return intersection;
-    }
-
-    intersection.hit = true;
-    intersection.point = ray.origin + ray.dir * t;
-    return intersection;
-}
-
-fn outUv(pixelPos: vec2f) -> vec4f {
-    let uv = pixelPos / uniforms.outSize;
-    return vec4f(uv, 0., 1.);
-}
-
-fn outCheckerboard(pixelPos: vec2f) -> vec4f {
-    if pixelPos.x < 1 ||
-       pixelPos.y < 1 ||
-       pixelPos.x > uniforms.outSize.x - 2 ||
-       pixelPos.y > uniforms.outSize.y - 2 {
-        return vec4f(1, 0, 0, 1);
-    } else if (pixelPos.x + pixelPos.y) % 2 == 0 {
-        return vec4f(0, 0, .5, 1);
-    } else {
-        return vec4f(1, 1, 1, 1);
-    }
-}
-`
+        code: applyTemplate(computeWgsl, { commons, maxBounces, workgroupSize: workgroupSize.join(',') })
     })
 
     // needed because rgba16float is not the default choice for storage textures
@@ -745,59 +417,7 @@ const initRender = async () => {
     device.queue.writeBuffer(clipVertexBuffer, 0, clipPlane)
 
     const renderModule = device.createShaderModule({
-        code: wgsl`
-${commons}
-
-@group(0) @binding(0) var computeTexture: texture_2d<f32>;
-@group(0) @binding(1) var computeSampler: sampler;
-@group(0) @binding(2) var<uniform> uniforms: Uniforms;
-
-struct VertexOut {
-    @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f
-};
-
-@vertex
-fn mainVertex(@location(0) position: vec2f) -> VertexOut {
-    return VertexOut(vec4f(position, 0., 1.), position * .5 + .5);
-}
-
-@fragment
-fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
-    let os = uniforms.outSize - 1;
-    var uv = vout.uv * (os);
-    let exactSize = floor(os);
-    uv += .5 * (exactSize - uniforms.outSize);
-    uv += 1;
-    uv /= ${computeOutputTextureSize};
-
-    let color = textureSample(computeTexture, computeSampler, uv).rgb;
-
-    let exposure = 1.;
-    var toneMapped = tmoAces(color / exposure);
-    toneMapped = linearToSrgb(toneMapped);
-
-    return vec4f(color, 1);
-}
-
-fn tmoAces(x_: vec3f) -> vec3f {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    let x = x_ * 0.6;
-    let co = (x * (a * x + b)) / (x * (c * x + d) + e);
-    return clamp(co, vec3f(0), vec3f(1));
-}
-
-fn linearToSrgb(v: vec3f) -> vec3f {
-    let cutoff = step(vec3(0.0031308), v);
-    let lower = v * 12.92;
-    let higher = 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055;
-    return mix(lower, higher, cutoff);
-}
-`
+        code: applyTemplate(renderWgsl, { commons, computeOutputTextureSize })
     })
 
     renderPipeline = await device.createRenderPipelineAsync({
@@ -841,5 +461,19 @@ fn linearToSrgb(v: vec3f) -> vec3f {
         ]
     })
 }
+
+const applyTemplate = (code: string, variables: Record<string, string | number>): string => {
+    let applied = code
+    for (const [name, variable] of Object.entries(variables)) {
+        applied = applied.replaceAll(`\${${name}}`, variable.toString())
+    }
+    return applied
+}
+
+const commons = applyTemplate(commonsWgsl, {
+    meshArraySize,
+    objectsArraySize,
+    materialsArraySize
+})
 
 main()
