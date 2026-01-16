@@ -29,7 +29,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
     var toneMapped = tmoAces(color / exposure);
     toneMapped = linearToSrgb(toneMapped);
 
-    return vec4f(color, 1);
+    return vec4f(toneMapped, 1);
 }
 
 fn tmoAces(x_: vec3f) -> vec3f {

@@ -48,8 +48,8 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     let ambientEmission = .1;
     let ambientColor = vec3f(1);
 
-    var light = vec3f(ambientColor);
-    var emission = ambientEmission;
+    var color = vec3f(ambientColor);
+    var emission = 1.;
     var ray = rayStart;
 
     for (var bounce = 0u; bounce < maxBounces; bounce++) {
@@ -60,30 +60,30 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let material = store.materials[u32(object.material)];
 
             if material.emissiveColor.a > 1 {
-                emission += material.emissiveColor.a;
+                emission *= material.emissiveColor.a;
                 break;
             }
 
-            light *= material.baseColor.rgb;
+            color *= material.baseColor.rgb;
 
             let reflection = ray.dir - 2 * dot(ray.dir, rayCast.normal) * rayCast.normal;
             let roughness = material.roughness;
             // let roughness = 1.;
             var scatter = randomDirection();
-            if dot(rayCast.normal, scatter) < 0 {
-                scatter *= -1;
-            }
             let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
 
-            let offset = rayCast.normal * 0.00;
-            ray = Ray(rayCast.intersection.point + offset, dir);
+
+            ray = Ray(rayCast.intersection.point, dir);
         } else {
             emission = 0;
             break;
         }
+        if bounce == maxBounces - 1 {
+            emission = ambientEmission;
+        }
     }
 
-    return light * emission;
+    return color * emission;
 }
 
 fn castRay(ray: Ray) -> RayCast {
