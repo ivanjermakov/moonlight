@@ -667,7 +667,8 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
             ...m.emissive,
             m.material.emissiveIntensity,
             m.metallic,
-            m.roughness,
+            // TODO: explain
+            Math.sqrt(m.roughness),
             0,
             0
         )
