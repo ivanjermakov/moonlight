@@ -15,6 +15,7 @@ import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
 import './index.css'
 import renderWgsl from './render.wgsl?raw'
+import { transformDirArray, transformPointArray } from './util'
 
 type SceneObject = {
     mesh: Mesh
@@ -58,7 +59,7 @@ const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectsArraySize = 128
 const materialsArraySize = 32
-const sceneObjectSize = 32
+const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
@@ -328,13 +329,14 @@ const initCompute = async () => {
     const uvArray = new Float32Array(meshArraySize)
     const objectsArray: number[] = []
     for (const o of objects) {
+        const mat = o.matrixWorld
+        const box = o.boundingBox.applyMatrix4(mat)
         indexArray.set(o.index.array, o.indexOffset)
-        positionArray.set(o.position.array, o.vertexOffset * 3)
-        normalArray.set(o.normal.array, o.vertexOffset * 3)
+        positionArray.set(transformPointArray(o.position.array as Float32Array, mat), o.vertexOffset * 3)
+        normalArray.set(transformDirArray(o.normal.array as Float32Array, mat), o.vertexOffset * 3)
         uvArray.set(o.uv.array, o.vertexOffset * 2)
         objectsArray.push(
-            ...o.matrixWorld.toArray(),
-            ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
+            ...[...box.min.toArray(), 0, ...box.max.toArray(), 0],
             o.indexOffset,
             o.index.count,
             o.vertexOffset,
