@@ -50,7 +50,7 @@ const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
 
-const renderScale = 1 / 2
+const renderScale = 1 / 1
 const aspectRatio = 16 / 9
 const maxBounces = 8
 const workgroupSize = [8, 8]
@@ -64,7 +64,7 @@ const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
 type SceneName = 'cornell-box' | 'rough-metallic'
-const sceneName = 'rough-metallic' as SceneName
+const sceneName = 'cornell-box' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -358,8 +358,7 @@ const initCompute = async () => {
             ...m.emissive,
             m.material.emissiveIntensity,
             m.metallic,
-            // TODO: explain
-            Math.sqrt(m.roughness),
+            m.roughness,
             0,
             0
         )

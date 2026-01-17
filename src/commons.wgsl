@@ -44,3 +44,19 @@ fn randomDirection() -> vec3f {
         randomNormalDistribution(),
     ));
 }
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    return a + t * (b - a);
+}
+
+fn lerp2(a: vec2<f32>, b: vec2<f32>, t: f32) -> vec2<f32> {
+    return a + t * (b - a);
+}
+
+fn lerp3(a: vec3<f32>, b: vec3<f32>, t: f32) -> vec3<f32> {
+    return a + t * (b - a);
+}
+
+fn lerp4(a: vec4<f32>, b: vec4<f32>, t: f32) -> vec4<f32> {
+    return a + t * (b - a);
+}
