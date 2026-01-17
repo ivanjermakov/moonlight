@@ -1,4 +1,5 @@
 import {
+    Box3,
     BufferAttribute,
     BufferGeometry,
     Camera,
@@ -25,6 +26,7 @@ type SceneObject = {
     vertexOffset: number
     matrixWorld: Matrix4
     material: number
+    boundingBox: Box3
 }
 
 type SceneMaterial = {
@@ -56,7 +58,7 @@ const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
 const meshArraySize = 8192
 const objectsArraySize = 128
 const materialsArraySize = 32
-const sceneObjectSize = 24
+const sceneObjectSize = 32
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
@@ -108,6 +110,10 @@ const main = async (): Promise<void> => {
                 console.warn('no index buffer', o)
                 return
             }
+            if (!geometry.boundingBox) {
+                console.warn('no bounding box', o)
+                return
+            }
             const object: SceneObject = {
                 mesh: o,
                 index: geometry.index!,
@@ -117,7 +123,8 @@ const main = async (): Promise<void> => {
                 indexOffset,
                 vertexOffset,
                 matrixWorld: o.matrixWorld,
-                material: materialIndex
+                material: materialIndex,
+                boundingBox: o.geometry.boundingBox!
             }
             if (!(object.position.count === object.normal.count && object.position.count === object.uv.count)) {
                 console.warn('inconsistent buffer size', object)
@@ -320,6 +327,7 @@ const initCompute = async () => {
         uvArray.set(o.uv.array, o.vertexOffset * 2)
         objectsArray.push(
             ...o.matrixWorld.toArray(),
+            ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
             o.indexOffset,
             o.index.count,
             o.vertexOffset,
@@ -327,7 +335,7 @@ const initCompute = async () => {
             o.material,
             0,
             0,
-            0
+            0,
         )
     }
     const objectsTypedArray = new Float32Array(sceneObjectSize * objectsArraySize)

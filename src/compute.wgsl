@@ -6,6 +6,7 @@ const maxBounces = ${maxBounces};
 struct Ray {
     origin: vec3f,
     dir: vec3f,
+    dirInv: vec3f,
 }
 
 struct Intersection {
@@ -78,7 +79,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
 
 
-            ray = Ray(rayCast.intersection.point, dir);
+            ray = Ray(rayCast.intersection.point, dir, 1 / dir);
         } else {
             emission = 0;
             break;
@@ -96,6 +97,13 @@ fn castRay(ray: Ray) -> RayCast {
     rayCast.distance = maxDistance;
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
+        let box = Aabb(
+            transformPoint(object.boundingBox.min, object.matrixWorld),
+            transformPoint(object.boundingBox.max, object.matrixWorld),
+        );
+        if !intersectAabb(ray, box) {
+            continue;
+        }
         let indexOffset = u32(object.indexOffset);
         let vertexOffset = u32(object.vertexOffset);
         for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
@@ -168,6 +176,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
         // convert from mm to m
         focalPosWorld,
         dir,
+        1 / dir,
     );
 }
 
@@ -228,9 +237,24 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
     return intersection;
 }
 
+fn intersectAabb(ray: Ray, aabb: Aabb) -> bool {
+    let t1 = (aabb.min - ray.origin) * ray.dirInv;
+    let t2 = (aabb.max - ray.origin) * ray.dirInv;
+
+    var tmin = min(t1.x, t2.x);
+    tmin = max(tmin, min(t1.y, t2.y));
+    tmin = max(tmin, min(t1.z, t2.z));
+
+    var tmax = max(t1.x, t2.x);
+    tmax = min(tmax, max(t1.y, t2.y));
+    tmax = min(tmax, max(t1.z, t2.z));
+
+    return tmax >= max(0, tmin);
+}
+
 fn outUv(pixelPos: vec2f) -> vec4f {
     let uv = pixelPos / uniforms.outSize;
-    return vec4f(uv, 0., 1.);
+    return vec4f(uv, 0, 1);
 }
 
 fn outCheckerboard(pixelPos: vec2f) -> vec4f {
