@@ -55,14 +55,14 @@ const aspectRatio = 16 / 9
 const maxBounces = 8
 const workgroupSize = [8, 8]
 const computeOutputTextureSize = 4096
-const computeOutputTextureFormat: GPUTextureFormat = 'rgba16float'
+const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 const meshArraySize = 8192
 const objectsArraySize = 128
 const materialsArraySize = 32
 const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
-const runMode = 'vsync' as RunMode
+const runMode = 'busy' as RunMode
 type SceneName = 'cornell-box' | 'rough-metallic'
 const sceneName = 'cornell-box' as SceneName
 
@@ -299,7 +299,6 @@ const initCompute = async () => {
         })
     })
 
-    // needed because rgba16float is not the default choice for storage textures
     const layout = device.createBindGroupLayout({
         entries: [
             {
@@ -438,8 +437,15 @@ const initRender = async () => {
         code: applyTemplate(renderWgsl, { commons, computeOutputTextureSize })
     })
 
+    const layout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+        ]
+    })
     renderPipeline = await device.createRenderPipelineAsync({
-        layout: 'auto',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
         vertex: {
             module: renderModule,
             entryPoint: 'mainVertex',

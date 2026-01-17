@@ -74,8 +74,8 @@ struct RayCast {
 const maxDistance = 1e10;
 const maxBounces = ${maxBounces};
 
-@group(0) @binding(0) var acc: texture_storage_2d<rgba16float, read>;
-@group(0) @binding(1) var out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(0) var acc: texture_storage_2d<rgba32float, read>;
+@group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> store: Storage;
 
