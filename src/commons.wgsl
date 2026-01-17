@@ -3,63 +3,11 @@ const epsilon = 1e-5;
 
 var<private> seed = 0u;
 
-struct Storage {
-    index: array<f32, ${meshArraySize}>,
-    position: array<f32, ${meshArraySize}>,
-    normal: array<f32, ${meshArraySize}>,
-    uv: array<f32, ${meshArraySize}>,
-    objects: array<SceneObject, ${objectsArraySize}>,
-    materials: array<SceneMaterial, ${materialsArraySize}>,
-    camera: Camera,
-    objectCount: f32,
-    p1: f32,
-    p2: f32,
-    p3: f32,
-}
-
-struct SceneObject {
-    matrixWorld: mat4x4f,
-    boundingBox: Aabb,
-    indexOffset: f32,
-    indexCount: f32,
-    vertexOffset: f32,
-    vertexCount: f32,
-    material: f32,
-    p1: f32,
-    p2: f32,
-    p3: f32,
-}
-
-struct SceneMaterial {
-    baseColor: vec4f,
-    emissiveColor: vec4f,
-    metallic: f32,
-    roughness: f32,
-    p1: f32,
-    p2: f32,
-}
-
-struct Camera {
-    matrixWorld: mat4x4f,
-    rotation: vec4f,
-    sensorWidth: f32,
-    focalLength: f32,
-    p1: f32,
-    p2: f32,
-}
-
 struct Uniforms {
     outSize: vec2f,
     renderScale: f32,
     frame: f32,
     aspectRatio: f32,
-}
-
-struct Aabb {
-    min: vec3f,
-    // p1: f32,
-    max: vec3f,
-    // p2: f32,
 }
 
 fn random() -> u32 {
