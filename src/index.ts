@@ -288,7 +288,14 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
 
 const initCompute = async () => {
     const computeModule = device.createShaderModule({
-        code: applyTemplate(computeWgsl, { commons, maxBounces, workgroupSize: workgroupSize.join(',') })
+        code: applyTemplate(computeWgsl, {
+            commons,
+            meshArraySize,
+            objectsArraySize,
+            materialsArraySize,
+            maxBounces,
+            workgroupSize: workgroupSize.join(',')
+        })
     })
 
     // needed because rgba16float is not the default choice for storage textures
@@ -335,7 +342,7 @@ const initCompute = async () => {
             o.material,
             0,
             0,
-            0,
+            0
         )
     }
     const objectsTypedArray = new Float32Array(sceneObjectSize * objectsArraySize)
@@ -480,10 +487,6 @@ const applyTemplate = (code: string, variables: Record<string, string | number>)
     return applied
 }
 
-const commons = applyTemplate(commonsWgsl, {
-    meshArraySize,
-    objectsArraySize,
-    materialsArraySize
-})
+const commons = applyTemplate(commonsWgsl, {})
 
 main()

@@ -1,12 +1,61 @@
 ${commons}
 
-const maxDistance = 1e10;
-const maxBounces = ${maxBounces};
+struct Storage {
+    index: array<f32, ${meshArraySize}>,
+    position: array<f32, ${meshArraySize}>,
+    normal: array<f32, ${meshArraySize}>,
+    uv: array<f32, ${meshArraySize}>,
+    objects: array<SceneObject, ${objectsArraySize}>,
+    materials: array<SceneMaterial, ${materialsArraySize}>,
+    camera: Camera,
+    objectCount: f32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
+}
+
+struct SceneObject {
+    matrixWorld: mat4x4f,
+    boundingBox: Aabb,
+    indexOffset: f32,
+    indexCount: f32,
+    vertexOffset: f32,
+    vertexCount: f32,
+    material: f32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
+}
+
+struct SceneMaterial {
+    baseColor: vec4f,
+    emissiveColor: vec4f,
+    metallic: f32,
+    roughness: f32,
+    p1: f32,
+    p2: f32,
+}
+
+struct Camera {
+    matrixWorld: mat4x4f,
+    rotation: vec4f,
+    sensorWidth: f32,
+    focalLength: f32,
+    p1: f32,
+    p2: f32,
+}
 
 struct Ray {
     origin: vec3f,
     dir: vec3f,
     dirInv: vec3f,
+}
+
+struct Aabb {
+    min: vec3f,
+    // p1: f32,
+    max: vec3f,
+    // p2: f32,
 }
 
 struct Intersection {
@@ -22,6 +71,9 @@ struct RayCast {
     face: u32,
     distance: f32,
 }
+
+const maxDistance = 1e10;
+const maxBounces = ${maxBounces};
 
 @group(0) @binding(0) var acc: texture_storage_2d<rgba16float, read>;
 @group(0) @binding(1) var out: texture_storage_2d<rgba16float, write>;
