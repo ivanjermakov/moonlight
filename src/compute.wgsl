@@ -121,13 +121,16 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 break;
             }
 
-            color *= material.baseColor.rgb;
-
             let reflection = ray.dir - 2 * dot(ray.dir, rayCast.normal) * rayCast.normal;
-            let roughness = material.roughness;
-            // let roughness = 1.;
-            var scatter = randomDirection();
-            let dir = normalize((roughness * scatter) + ((1 - roughness) * reflection));
+            let scatter = randomDirection();
+
+            let nonMetalReflectance = 0.04;
+            let isSpecular = max(nonMetalReflectance, material.metallic) > randomf();
+            let colorDiffuse = material.baseColor.rgb;
+            // TODO: colorSpecular from material
+            let colorSpecular = material.baseColor.rgb;
+            color *= lerp3(colorDiffuse, colorSpecular, f32(isSpecular));
+            let dir = lerp3(scatter, reflection, f32(isSpecular) * (1 - material.roughness));
 
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
