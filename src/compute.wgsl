@@ -15,7 +15,6 @@ struct Storage {
 }
 
 struct SceneObject {
-    matrixWorld: mat4x4f,
     boundingBox: Aabb,
     indexOffset: f32,
     indexCount: f32,
@@ -149,11 +148,7 @@ fn castRay(ray: Ray) -> RayCast {
     rayCast.distance = maxDistance;
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
-        let box = Aabb(
-            transformPoint(object.boundingBox.min, object.matrixWorld),
-            transformPoint(object.boundingBox.max, object.matrixWorld),
-        );
-        if !intersectAabb(ray, box) {
+        if !intersectAabb(ray, object.boundingBox) {
             continue;
         }
         let indexOffset = u32(object.indexOffset);
@@ -163,12 +158,12 @@ fn castRay(ray: Ray) -> RayCast {
             for (var v = 0u; v < 3; v++) {
                 let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
                 let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let trianglePosLocal = vec3f(
+                let trianglePos = vec3f(
                     store.position[triIndexGlobal],
                     store.position[triIndexGlobal + 1],
                     store.position[triIndexGlobal + 2],
                 );
-                triangle[v] = transformPoint(trianglePosLocal, object.matrixWorld);
+                triangle[v] = trianglePos;
             }
             let intersection = intersectTriangle(ray, triangle);
             if intersection.hit {
@@ -187,9 +182,9 @@ fn castRay(ray: Ray) -> RayCast {
                     }
                     let u = intersection.uv.x;
                     let v = intersection.uv.y;
-                    // Vector3 shadingNormal = normals[0] + (normals[1] - normals[0]) * u + (normals[2] - normals[0]) * v;
-                    let normalLocal = normalize(triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v);
-                    let normal = transformDir(normalLocal, object.matrixWorld);
+                    let normal = normalize(
+                        triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
+                    );
 
                     if dot(normal, ray.dir) > 0 {
                         continue;
@@ -216,7 +211,6 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     } else {
         sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspect);
     }
-    let focalPosWorld = transformPoint(vec3f(), store.camera.matrixWorld);
     let pixelPosNorm = ((pixelPos + .5) / uniforms.outSize) - .5;
     let dirLocal = normalize(vec3f(
         pixelPosNorm.x * sensorSize.x,
@@ -225,8 +219,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     ));
     let dir = applyQuaternion(dirLocal, store.camera.rotation);
     return Ray(
-        // convert from mm to m
-        focalPosWorld,
+        transformPoint(vec3f(), store.camera.matrixWorld),
         dir,
         1 / dir,
     );
