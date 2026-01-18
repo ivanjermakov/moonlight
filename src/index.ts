@@ -53,6 +53,7 @@ let camera!: CameraConfig
 const renderScale = 1 / 1
 const aspectRatio = 16 / 9
 const maxBounces = 8
+const samplesPerPass = 8
 const workgroupSize = [8, 8]
 const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -295,6 +296,7 @@ const initCompute = async () => {
             objectsArraySize,
             materialsArraySize,
             maxBounces,
+            samplesPerPass,
             workgroupSize: workgroupSize.join(',')
         })
     })

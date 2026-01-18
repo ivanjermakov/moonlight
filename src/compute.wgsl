@@ -73,6 +73,7 @@ struct RayCast {
 
 const maxDistance = 1e10;
 const maxBounces = ${maxBounces};
+const samplesPerPass = ${samplesPerPass};
 
 @group(0) @binding(0) var acc: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
@@ -88,8 +89,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let pixelPos = vec3f(gid).xy;
 
     let cameraRay = cameraRay(pixelPos);
-    let color = traceRay(pixelPos, cameraRay);
-    // let color = random3f();
+    var color = vec3f(0);
+    for (var i = 0u; i < samplesPerPass; i++) {
+        color += traceRay(pixelPos, cameraRay);
+    }
+    color /= samplesPerPass;
 
     if uniforms.frame == 0 {
         textureStore(out, gid.xy, vec4f(color, 1));
