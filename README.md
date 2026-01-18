@@ -1,4 +1,4 @@
 # moonlight
 
-WebGPU ray tracer
+WebGPU path tracer
 

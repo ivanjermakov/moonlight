@@ -60,15 +60,15 @@ const samplesPerPass = 8
 const workgroupSize = [8, 8]
 const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-const meshArraySize = 8192
+const meshArraySize = 32768
 const objectsArraySize = 128
 const materialsArraySize = 32
 const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
-type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass'
-const sceneName = 'glass' as SceneName
+type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
+const sceneName = 'dof' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
