@@ -63,9 +63,9 @@ const materialsArraySize = 32
 const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
-const runMode = 'busy' as RunMode
-type SceneName = 'cornell-box' | 'rough-metallic'
-const sceneName = 'cornell-box' as SceneName
+const runMode = 'vsync' as RunMode
+type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics'
+const sceneName = 'caustics' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -240,6 +240,7 @@ const update = async () => {
     const dt = start - frameStart
     const dtps = dt / samplesPerPass
     info.innerText = [
+        sceneName,
         ['dt  ', dt.toFixed(1).padEnd(6, ' '), dtps.toFixed(1).padEnd(5, ' ')].join(' '),
         ['smpl', frame * samplesPerPass].join(' '),
         ['elps', `${((start - firstFrameStart) / 1000).toFixed()}s`].join(' ')
