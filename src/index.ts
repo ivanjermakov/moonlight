@@ -6,6 +6,7 @@ import {
     Color,
     Matrix4,
     Mesh,
+    MeshPhysicalMaterial,
     MeshStandardMaterial,
     PerspectiveCamera,
     Quaternion
@@ -36,6 +37,8 @@ type SceneMaterial = {
     emissive: Color
     metallic: number
     roughness: number
+    ior: number
+    transmission: number
 }
 
 type CameraConfig = {
@@ -64,8 +67,8 @@ const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
 const runMode = 'vsync' as RunMode
-type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics'
-const sceneName = 'caustics' as SceneName
+type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass'
+const sceneName = 'glass' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -101,13 +104,20 @@ const main = async (): Promise<void> => {
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
-                materials.push({
+                const sceneMaterial: SceneMaterial = {
                     material,
                     baseColor: material.color,
                     emissive: material.emissive,
                     metallic: material.metalness,
-                    roughness: material.roughness
-                })
+                    roughness: material.roughness,
+                    ior: 1,
+                    transmission: 0
+                }
+                if (material instanceof MeshPhysicalMaterial) {
+                    sceneMaterial.ior = material.ior
+                    sceneMaterial.transmission = material.transmission
+                }
+                materials.push(sceneMaterial)
             }
             const geometry = o.geometry
             if (!geometry.index) {
@@ -372,8 +382,8 @@ const initCompute = async () => {
             m.material.emissiveIntensity,
             m.metallic,
             m.roughness,
-            0,
-            0
+            m.ior,
+            m.transmission
         )
     }
     const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)

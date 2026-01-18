@@ -31,8 +31,8 @@ struct SceneMaterial {
     emissiveColor: vec4f,
     metallic: f32,
     roughness: f32,
-    p1: f32,
-    p2: f32,
+    ior: f32,
+    transmission: f32,
 }
 
 struct Camera {
@@ -112,6 +112,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var color = vec3f(ambientColor);
     var emission = 1.;
     var ray = rayStart;
+    var ior = 1.;
 
     for (var bounce = 0u; bounce < maxBounces; bounce++) {
         let rayCast = castRay(ray);
@@ -125,16 +126,61 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 break;
             }
 
-            let reflection = ray.dir - 2 * dot(ray.dir, rayCast.normal) * rayCast.normal;
+            let normalWorld = rayCast.normal;
+            let cosIncidenceWorld = dot(ray.dir, normalWorld);
+            let outsideIn = cosIncidenceWorld < 0;
+
+            var normal = normalWorld;
+            var cosIncidence = cosIncidenceWorld;
+            if !outsideIn {
+                normal *= -1;
+                cosIncidence *= -1;
+            }
+
+            let reflection = ray.dir - 2 * cosIncidence * normal;
             let scatter = randomDirection();
 
+            var iorFrom: f32;
+            var iorTo: f32;
+            if outsideIn {
+                iorFrom = ior;
+                iorTo = material.ior;
+            } else {
+                iorFrom = material.ior;
+                // TODO: what if flying out into another object?
+                iorTo = 1;
+            }
+
             let nonMetalReflectance = 0.04;
-            let isSpecular = max(nonMetalReflectance, material.metallic) > randomf();
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
             let colorSpecular = material.baseColor.rgb;
-            color *= lerp3(colorDiffuse, colorSpecular, f32(isSpecular));
-            let dir = lerp3(scatter, reflection, f32(isSpecular) * (1 - material.roughness));
+            let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
+            let isReflection = clamp(max(material.metallic, reflectance), nonMetalReflectance, 1) > randomf();
+
+            var dir: vec3f;
+            if isReflection {
+                color *= colorSpecular;
+                dir = lerp3(reflection, scatter, material.roughness);
+            } else {
+                let isTransmission = material.transmission > randomf();
+                if isTransmission {
+                    let refraction = refractionDirSnell(ray.dir, normal, cosIncidence, iorFrom, iorTo);
+                    let totalInternal = refraction.w == 0;
+                    if totalInternal {
+                        color *= colorSpecular;
+                        dir = lerp3(reflection, scatter, material.roughness);
+                        ior = iorFrom;
+                    } else {
+                        color *= colorSpecular;
+                        dir = lerp3(refraction.xyz, scatter, material.roughness);
+                        ior = iorTo;
+                    }
+                } else {
+                    color *= colorDiffuse;
+                    dir = scatter;
+                }
+            }
 
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
@@ -194,7 +240,10 @@ fn castRay(ray: Ray) -> RayCast {
                     );
 
                     if dot(normal, ray.dir) > 0 {
-                        continue;
+                        let material = store.materials[u32(object.material)];
+                        if material.transmission == 0 {
+                            continue;
+                        }
                     }
 
                     rayCast.intersection = intersection;
@@ -320,5 +369,21 @@ fn outCheckerboard(pixelPos: vec2f) -> vec4f {
         return vec4f(0, 0, .5, 1);
     } else {
         return vec4f(1, 1, 1, 1);
+    }
+}
+
+fn schlickFresnel(cosIncidence: f32, n1: f32, n2: f32) -> f32 {
+    let r0 = pow((n1 - n2) / (n1 + n2), 2);
+    return r0 + (1 - r0) * pow(1 - abs(cosIncidence), 5);
+}
+
+fn refractionDirSnell(incident: vec3f, normal: vec3f, cosIncidence: f32, n1: f32, n2: f32) -> vec4f {
+    let eta = n1 / n2;
+    let k = 1 - pow(eta, 2) * (1 - pow(cosIncidence, 2));
+    if (k < 0) {
+        return vec4f(0);
+    } else {
+        let refracted = eta * incident + (eta * -cosIncidence - sqrt(k)) * normal;
+        return vec4f(refracted, 1);
     }
 }
