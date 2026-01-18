@@ -69,6 +69,7 @@ const sceneName = 'cornell-box' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
+let info: HTMLElement
 let ctx: GPUCanvasContext
 let formatCanvas: GPUTextureFormat
 let resolution: [number, number]
@@ -84,6 +85,7 @@ let renderBindGroup: GPUBindGroup
 let clipVertexBuffer: GPUBuffer
 
 let frame: number = 0
+let firstFrameStart: number = 0
 let frameStart: number = 0
 let capture = false
 
@@ -163,6 +165,7 @@ const main = async (): Promise<void> => {
     }
     console.debug(device)
 
+    info = document.getElementById('info')!
     canvas = document.getElementById('canvas') as HTMLCanvasElement
     ctx = canvas.getContext('webgpu')!
     console.debug(ctx)
@@ -234,8 +237,16 @@ const update = async () => {
 
     await device.queue.onSubmittedWorkDone()
 
-    document.getElementById('delta')!.innerText = (start - frameStart).toFixed(2).padStart(5, ' ')
+    const dt = start - frameStart
+    const dtps = dt / samplesPerPass
+    info.innerText = [
+        ['dt  ', dt.toFixed(1).padEnd(6, ' '), dtps.toFixed(1).padEnd(5, ' ')].join(' '),
+        ['smpl', frame * samplesPerPass].join(' '),
+        ['elps', `${((start - firstFrameStart) / 1000).toFixed()}s`].join(' ')
+    ].join('\n')
+
     frameStart = start
+    if (frame === 0) firstFrameStart = frameStart
     frame++
 }
 

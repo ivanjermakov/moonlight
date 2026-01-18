@@ -129,6 +129,13 @@ select {
     display: flex;
     flex-direction: column;
 
+    #info {
+        display: flex;
+        font-size: .8rem;
+        white-space: pre;
+        margin: .5rem;
+    }
+
     #canvas, #overlay {
         position: absolute;
         top: 0;
@@ -138,7 +145,6 @@ select {
     }
 
     #overlay {
-        padding: .5rem;
         z-index: 2;
     }
 }
