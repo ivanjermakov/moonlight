@@ -47,6 +47,8 @@ type CameraConfig = {
     rotation: Quaternion
     sensorWidth: number
     focalLength: number
+    fstop: number
+    focus: number
 }
 
 const materials: SceneMaterial[] = []
@@ -154,7 +156,9 @@ const main = async (): Promise<void> => {
                 sensorWidth: o.filmGauge,
                 focalLength: o.getFocalLength(),
                 matrixWorld: o.matrixWorld,
-                rotation: o.quaternion
+                rotation: o.quaternion,
+                fstop: o.userData.aperture_fstop ?? 0,
+                focus: o.userData.focus_distance ?? 0,
             }
         }
     })
@@ -381,7 +385,8 @@ const initCompute = async () => {
             ...m.emissive,
             m.material.emissiveIntensity,
             m.metallic,
-            m.roughness,
+            // TODO: explain
+            m.roughness ** 2,
             m.ior,
             m.transmission
         )
@@ -394,8 +399,8 @@ const initCompute = async () => {
         ...camera.rotation.toArray(),
         camera.sensorWidth,
         camera.focalLength,
-        0,
-        0
+        camera.focus,
+        camera.fstop,
     ]
     const storageBufferArray = [
         ...indexArray,

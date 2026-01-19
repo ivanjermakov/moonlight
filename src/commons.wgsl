@@ -36,8 +36,14 @@ fn randomNormalDistribution() -> f32 {
     return rho * cos(theta);
 }
 
+fn randomCircleSample() -> vec2f {
+    let theta = randomf() * 2 * pi;
+    let r = sqrt(randomf());
+    return vec2f( r * cos(theta), r * sin(theta));
+}
+
 // https://math.stackexchange.com/a/1585996
-fn randomDirection() -> vec3f {
+fn randomDir3() -> vec3f {
     return normalize(vec3f(
         randomNormalDistribution(),
         randomNormalDistribution(),

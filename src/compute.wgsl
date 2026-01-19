@@ -40,8 +40,8 @@ struct Camera {
     rotation: vec4f,
     sensorWidth: f32,
     focalLength: f32,
-    p1: f32,
-    p2: f32,
+    focus: f32,
+    fstop: f32,
 }
 
 struct Ray {
@@ -138,7 +138,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             }
 
             let reflection = ray.dir - 2 * cosIncidence * normal;
-            let scatter = randomDirection();
+            let scatter = randomDir3();
 
             var iorFrom: f32;
             var iorTo: f32;
@@ -274,12 +274,19 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
         pixelPosNorm.y * sensorSize.y,
         -store.camera.focalLength,
     ));
-    let dir = applyQuaternion(dirLocal, store.camera.rotation);
-    return Ray(
-        transformPoint(vec3f(), store.camera.matrixWorld),
-        dir,
-        1 / dir,
-    );
+    if store.camera.focus == 0 || store.camera.fstop == 0 {
+        let origin = transformPoint(vec3f(), store.camera.matrixWorld);
+        let dir = applyQuaternion(dirLocal, store.camera.rotation);
+        return Ray(origin, dir, 1 / dir);
+    } else {
+        let focusPoint = dirLocal * store.camera.focus;
+        let dofStrength = (1 / store.camera.fstop) * (sensorSize.x / 1000);
+        let originLocal = vec3f(randomCircleSample() * dofStrength, 0);
+        let dirLocal = normalize(focusPoint - originLocal);
+        let origin = transformPoint(originLocal, store.camera.matrixWorld);
+        let dir = applyQuaternion(dirLocal, store.camera.rotation);
+        return Ray(origin, dir, 1 / dir);
+    }
 }
 
 fn transformPoint(point: vec3f, mat: mat4x4f) -> vec3f {
