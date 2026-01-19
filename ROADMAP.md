@@ -5,3 +5,4 @@
 - [ ] Textures
 - [ ] Normal maps
 - [ ] Roughness maps
+- [ ] Bloom

@@ -103,6 +103,7 @@ const main = async (): Promise<void> => {
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
             const material = o.material
+            const geometry = o.geometry
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
@@ -121,7 +122,6 @@ const main = async (): Promise<void> => {
                 }
                 materials.push(sceneMaterial)
             }
-            const geometry = o.geometry
             if (!geometry.index) {
                 console.warn('no index buffer', o)
                 return
@@ -158,7 +158,7 @@ const main = async (): Promise<void> => {
                 matrixWorld: o.matrixWorld,
                 rotation: o.quaternion,
                 fstop: o.userData.aperture_fstop ?? 0,
-                focus: o.userData.focus_distance ?? 0,
+                focus: o.userData.focus_distance ?? 0
             }
         }
     })
@@ -357,7 +357,7 @@ const initCompute = async () => {
     const objectsArray: number[] = []
     for (const o of objects) {
         const mat = o.matrixWorld
-        const box = o.boundingBox.applyMatrix4(mat)
+        const box = o.boundingBox.clone().applyMatrix4(mat)
         indexArray.set(o.index.array, o.indexOffset)
         positionArray.set(transformPointArray(o.position.array as Float32Array, mat), o.vertexOffset * 3)
         normalArray.set(transformDirArray(o.normal.array as Float32Array, mat), o.vertexOffset * 3)
@@ -400,7 +400,7 @@ const initCompute = async () => {
         camera.sensorWidth,
         camera.focalLength,
         camera.focus,
-        camera.fstop,
+        camera.fstop
     ]
     const storageBufferArray = [
         ...indexArray,
