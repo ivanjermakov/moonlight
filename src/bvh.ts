@@ -72,20 +72,12 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
             const rightIdxs: number[] = []
             for (let i = 0; i < node.triangles.length; i++) {
                 const ti = node.triangleIdxs[i]
-                const triangle = node.triangles[i]
-                let allLeft = true
-                let allRight = true
-                const a = triangle.a[splitAxis]
-                const b = triangle.b[splitAxis]
-                const c = triangle.c[splitAxis]
-                if (a <= splitPoint || b <= splitPoint || c <= splitPoint) allRight = false
-                if (a >= splitPoint || b >= splitPoint || c >= splitPoint) allLeft = false
-                if (!allRight) {
-                    left.push(triangle)
+                const t = node.triangles[i]
+                if (t.a[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint) {
+                    left.push(t)
                     leftIdxs.push(ti)
-                }
-                if (!allLeft) {
-                    right.push(triangle)
+                } else {
+                    right.push(t)
                     rightIdxs.push(ti)
                 }
             }
@@ -115,7 +107,10 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
 }
 
 export const splitBvh = (node: BvhNode, depth: number): BvhNode => {
-    if (depth >= bvhDepth) return node
+    if (depth >= bvhDepth) {
+        console.warn('hit the bvh depth limit', node, depth)
+        return node
+    }
     if (node.type === 'node') throw Error()
     const object = node.object
 
