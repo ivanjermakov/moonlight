@@ -1,5 +1,5 @@
 import { Box3, Triangle, Vector3 } from 'three'
-import { SceneObject, bvhDepth } from '.'
+import { SceneObject, bvhDepth, bvhSplitAccuracy } from '.'
 
 export const axes = ['x', 'y', 'z'] as const
 export type Axis = (typeof axes)[number]
@@ -61,11 +61,12 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
                 case 'y': axisIndex = 1; break;
                 case 'z': axisIndex = 2; break;
             }
-        const splitAxisPoints = new Set<number>()
-        for (let vi = 0; vi < node.object.positionCount / 3; vi++) {
-            splitAxisPoints.add(node.object.position[3 * vi + axisIndex])
-        }
-        for (const splitPoint of splitAxisPoints) {
+        const triCount = node.object.positionCount / 3
+        // intrinsic to not brute force through every possible bvh slice
+        // https://www.desmos.com/calculator/5lwf9tbwym
+        const accuracy = bvhSplitAccuracy / (triCount + bvhSplitAccuracy)
+        for (let vi = 0; vi < triCount; vi += 1 / accuracy) {
+            const splitPoint = node.object.position[3 * Math.floor(vi) + axisIndex]
             const left: Triangle[] = []
             const leftIdxs: number[] = []
             const right: Triangle[] = []

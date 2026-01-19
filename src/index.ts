@@ -72,6 +72,7 @@ export const materialsArraySize = 32
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
 export const bvhDepth = 16
+export const bvhSplitAccuracy = 20
 export type RunMode = 'vsync' | 'busy' | 'single'
 export const runMode = 'single' as RunMode
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
