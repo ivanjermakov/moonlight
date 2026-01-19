@@ -20,10 +20,12 @@ import { transformDirArray, transformPointArray } from './util'
 
 type SceneObject = {
     mesh: Mesh
-    index: BufferAttribute
-    position: BufferAttribute
-    normal: BufferAttribute
-    uv: BufferAttribute
+    index: Uint16Array
+    indexCount: number
+    position: Float32Array
+    positionCount: number
+    normal: Float32Array
+    uv: Float32Array
     indexOffset: number
     vertexOffset: number
     matrixWorld: Matrix4
@@ -105,6 +107,10 @@ const main = async (): Promise<void> => {
             if (!['suzanne', 'floor', 'ceiling'].includes(o.name)) return
             const material = o.material
             const geometry = o.geometry
+            const index = geometry.index
+            const position = geometry.attributes.position as BufferAttribute
+            const normal = geometry.attributes.normal as BufferAttribute
+            const uv = geometry.attributes.uv as BufferAttribute
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
@@ -131,24 +137,26 @@ const main = async (): Promise<void> => {
                 console.warn('no bounding box', o)
                 return
             }
+            if (!(position.count === normal.count && position.count === uv.count)) {
+                console.warn('inconsistent buffer size', o)
+                return
+            }
             const object: SceneObject = {
                 mesh: o,
-                index: geometry.index!,
-                position: geometry.attributes.position,
-                normal: geometry.attributes.normal,
-                uv: geometry.attributes.uv,
+                index: geometry.index!.array as Uint16Array,
+                indexCount: geometry.index.count,
+                position: transformPointArray(position.array as Float32Array, o.matrixWorld),
+                positionCount: position.count,
+                normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
+                uv: uv.array as Float32Array,
                 indexOffset,
                 vertexOffset,
                 matrixWorld: o.matrixWorld,
                 material: materialIndex,
-                boundingBox: o.geometry.boundingBox!
+                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld)
             }
-            if (!(object.position.count === object.normal.count && object.position.count === object.uv.count)) {
-                console.warn('inconsistent buffer size', object)
-                return
-            }
-            indexOffset += object.index.count
-            vertexOffset += object.position.count
+            indexOffset += object.indexCount
+            vertexOffset += object.positionCount
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
@@ -357,18 +365,16 @@ const initCompute = async () => {
     const uvArray = new Float32Array(meshArraySize)
     const objectsArray: number[] = []
     for (const o of objects) {
-        const mat = o.matrixWorld
-        const box = o.boundingBox.clone().applyMatrix4(mat)
-        indexArray.set(o.index.array, o.indexOffset)
-        positionArray.set(transformPointArray(o.position.array as Float32Array, mat), o.vertexOffset * 3)
-        normalArray.set(transformDirArray(o.normal.array as Float32Array, mat), o.vertexOffset * 3)
-        uvArray.set(o.uv.array, o.vertexOffset * 2)
+        indexArray.set(o.index, o.indexOffset)
+        positionArray.set(o.position, o.vertexOffset * 3)
+        normalArray.set(o.normal, o.vertexOffset * 3)
+        uvArray.set(o.uv, o.vertexOffset * 2)
         objectsArray.push(
-            ...[...box.min.toArray(), 0, ...box.max.toArray(), 0],
+            ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
             o.indexOffset,
-            o.index.count,
+            o.indexCount,
             o.vertexOffset,
-            o.position.count,
+            o.positionCount,
             o.material,
             0,
             0,
