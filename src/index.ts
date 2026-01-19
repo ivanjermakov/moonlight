@@ -12,7 +12,8 @@ import {
     Quaternion
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { BvhNode, buildBvh } from './bvh'
+import { BvhNode, buildBvh, traverseBfs } from './bvh'
+import bvhWgsl from './bvh.wgsl?raw'
 import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
 import './index.css'
@@ -66,12 +67,14 @@ export const samplesPerPass = 1
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-export const meshArraySize = 32768
-export const objectsArraySize = 128
+export const objectsArraySize = 256
+export const meshArraySize = objectsArraySize * 8192
 export const materialsArraySize = 32
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
+export const bvhNodeSize = 12
 export const bvhDepth = 16
+export const bvhNodeArraySize = objectsArraySize * 4096
 export const bvhSplitAccuracy = 20
 export type RunMode = 'vsync' | 'busy' | 'single'
 export const runMode = 'single' as RunMode
@@ -108,7 +111,6 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
-            if (!['suzanne', 'floor', 'ceiling'].includes(o.name)) return
             const material = o.material
             const geometry = o.geometry
             const position = geometry.attributes.position as BufferAttribute
@@ -180,29 +182,6 @@ const main = async (): Promise<void> => {
     console.debug(materials)
     console.debug(camera)
     console.debug(objects.map(o => o.bvh))
-
-    const leaves: BvhNode[] = []
-    const queue = [objects[2].bvh]
-    while (queue.length > 0) {
-        const n = queue.splice(0, 1)[0]
-        if (n.type === 'leaf') {
-            leaves.push(n)
-        } else {
-            if (n.left) {
-                queue.push(n.left)
-            }
-            if (n.right) {
-                queue.push(n.right)
-            }
-        }
-    }
-    const leafTris = leaves.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
-    console.debug('bvh', leaves, {
-        min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
-        max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
-        mean: leafTris[Math.floor(leafTris.length / 2)],
-        avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
-    })
 
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
@@ -356,9 +335,11 @@ const initCompute = async () => {
     const computeModule = device.createShaderModule({
         code: applyTemplate(computeWgsl, {
             commons,
+            bvh,
             meshArraySize,
             objectsArraySize,
             materialsArraySize,
+            bvhNodeArraySize,
             maxBounces,
             samplesPerPass,
             workgroupSize: workgroupSize.join(',')
@@ -393,11 +374,38 @@ const initCompute = async () => {
     const normalArray = new Float32Array(meshArraySize)
     const uvArray = new Float32Array(meshArraySize)
     const objectsArray: number[] = []
+    const bvhNodeArray: number[] = []
+    const bvhTriangleArray: number[] = []
     for (const o of objects) {
         indexArray.set(o.index, o.indexOffset)
         positionArray.set(o.position, o.vertexOffset * 3)
         normalArray.set(o.normal, o.vertexOffset * 3)
         uvArray.set(o.uv, o.vertexOffset * 2)
+
+        const bvhNodeOffset = bvhNodeArray.length
+        const bvhNodes = traverseBfs(o.bvh)
+        for (let i = 0; i < bvhNodes.length; i++) {
+            const bvhNode = bvhNodes[i]
+            bvhNodeArray.push(
+                ...[...bvhNode.box.min.toArray(), 0, ...bvhNode.box.max.toArray(), 0],
+                bvhNode.type === 'leaf' ? bvhTriangleArray.length : 0,
+                bvhNode.type === 'leaf' ? bvhNode.triangles.length : 0,
+                bvhNode.type === 'node' ? bvhNodeOffset + i + 1 : 0,
+                0
+            )
+            if (bvhNode.type === 'leaf') {
+                bvhTriangleArray.push(...bvhNode.triangleIdxs)
+            }
+        }
+
+        const leafTris = bvhNodes.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
+        console.debug('bvh', o.mesh.name, {
+            min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+            max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
+            mean: leafTris[Math.floor(leafTris.length / 2)],
+            avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
+        })
+
         objectsArray.push(
             ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
             o.indexOffset,
@@ -430,6 +438,11 @@ const initCompute = async () => {
     const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)
     materialsTypedArray.set(materialsArray)
 
+    const bvhTriangleTypedArray = new Float32Array(meshArraySize)
+    bvhTriangleTypedArray.set(bvhTriangleArray)
+    const bvhNodeTypedArray = new Float32Array(bvhNodeSize * bvhNodeArraySize)
+    bvhTriangleTypedArray.set(bvhNodeArray)
+
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
         ...camera.rotation.toArray(),
@@ -445,6 +458,8 @@ const initCompute = async () => {
         ...uvArray,
         ...objectsTypedArray,
         ...materialsTypedArray,
+        ...bvhTriangleTypedArray,
+        ...bvhNodeTypedArray,
         ...cameraArray,
         objects.length,
         0,
@@ -560,5 +575,6 @@ const applyTemplate = (code: string, variables: Record<string, string | number>)
 }
 
 const commons = applyTemplate(commonsWgsl, {})
+const bvh = applyTemplate(bvhWgsl, {})
 
 main()

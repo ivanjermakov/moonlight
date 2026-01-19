@@ -10,8 +10,8 @@ export type BvhNode = {
 } & (
     | {
           type: 'node'
-          left: BvhNode | undefined
-          right: BvhNode | undefined
+          left: BvhNode
+          right: BvhNode
       }
     | {
           type: 'leaf'
@@ -19,6 +19,18 @@ export type BvhNode = {
           triangles: Triangle[]
       }
 )
+
+export type SplitResult = {
+    splitAxis: Axis
+    splitPoint: number
+    left: Triangle[]
+    leftIdxs: number[]
+    leftBox: Box3
+    right: Triangle[]
+    rightIdxs: number[]
+    rightBox: Box3
+    cost: number
+}
 
 export const buildBvh = (object: SceneObject): BvhNode => {
     const triangleIdxs = []
@@ -35,18 +47,6 @@ export const buildBvh = (object: SceneObject): BvhNode => {
     }
 
     return splitBvh(root, 0)
-}
-
-export type SplitResult = {
-    splitAxis: Axis
-    splitPoint: number
-    left: Triangle[]
-    leftIdxs: number[]
-    leftBox: Box3
-    right: Triangle[]
-    rightIdxs: number[]
-    rightBox: Box3
-    cost: number
 }
 
 export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
@@ -119,8 +119,8 @@ export const splitBvh = (node: BvhNode, depth: number): BvhNode => {
         type: 'node',
         object,
         box: node.box,
-        left: undefined,
-        right: undefined
+        left: undefined as any,
+        right: undefined as any
     }
 
     const split = optimalSplit(node)
@@ -183,4 +183,19 @@ export const triangleByIndex = (object: SceneObject, index: number): Triangle =>
         )
     }
     return new Triangle(...triangle)
+}
+
+export const traverseBfs = (root: BvhNode): BvhNode[] => {
+    const result = []
+    const queue = [root]
+    while (queue.length > 0) {
+        const node = queue.splice(0, 1)[0]
+        switch (node.type) {
+            case 'node':
+                return [node, ...traverseBfs(node.left), ...traverseBfs(node.right)]
+            case 'leaf':
+                return [node]
+        }
+    }
+    return result
 }

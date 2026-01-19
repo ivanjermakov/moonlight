@@ -1,5 +1,7 @@
 ${commons}
 
+${bvh}
+
 struct Storage {
     index: array<f32, ${meshArraySize}>,
     position: array<f32, ${meshArraySize}>,
@@ -7,6 +9,9 @@ struct Storage {
     uv: array<f32, ${meshArraySize}>,
     objects: array<SceneObject, ${objectsArraySize}>,
     materials: array<SceneMaterial, ${materialsArraySize}>,
+    // array of object-space triangle indices
+    bvhTriangle: array<f32, ${meshArraySize}>,
+    bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     camera: Camera,
     objectCount: f32,
     p1: f32,
@@ -21,8 +26,8 @@ struct SceneObject {
     vertexOffset: f32,
     vertexCount: f32,
     material: f32,
-    p1: f32,
-    p2: f32,
+    bvhOffset: f32,
+    bvhCount: f32,
     p3: f32,
 }
 
@@ -97,8 +102,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
     color /= samplesPerPass;
-    color.a = testCountTriangle / 1e3;
-    // color.a = testCountAabb / 1e1;
+    color.a = testCountTriangle / 2e3;
+    // color.a = testCountAabb / 1e2;
 
     if uniforms.frame == 0 {
         textureStore(out, gid.xy, color);
