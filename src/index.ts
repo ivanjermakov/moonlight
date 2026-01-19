@@ -58,7 +58,7 @@ let camera!: CameraConfig
 const renderScale = 1 / 1
 const aspectRatio = 16 / 9
 const maxBounces = 8
-const samplesPerPass = 8
+const samplesPerPass = 1
 const workgroupSize = [8, 8]
 const computeOutputTextureSize = 4096
 const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -68,7 +68,7 @@ const materialsArraySize = 32
 const sceneObjectSize = 16
 const sceneMaterialSize = 12
 type RunMode = 'vsync' | 'busy' | 'single'
-const runMode = 'vsync' as RunMode
+const runMode = 'single' as RunMode
 type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
 const sceneName = 'dof' as SceneName
 
@@ -102,6 +102,7 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
+            if (!['suzanne', 'floor', 'ceiling'].includes(o.name)) return
             const material = o.material
             const geometry = o.geometry
             let materialIndex = materials.findIndex(m => m.material.name === material.name)

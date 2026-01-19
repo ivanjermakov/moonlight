@@ -75,6 +75,8 @@ const maxDistance = 1e10;
 const maxBounces = ${maxBounces};
 const samplesPerPass = ${samplesPerPass};
 
+var<private> testCount = 0.;
+
 @group(0) @binding(0) var acc: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
@@ -89,20 +91,21 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let pixelPos = vec3f(gid).xy;
 
     let cameraRay = cameraRay(pixelPos);
-    var color = vec3f(0);
+    var color = vec4f(0);
     for (var i = 0u; i < samplesPerPass; i++) {
-        color += traceRay(pixelPos, cameraRay);
+        color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
     color /= samplesPerPass;
+    color.a = testCount;
 
     if uniforms.frame == 0 {
-        textureStore(out, gid.xy, vec4f(color, 1));
+        textureStore(out, gid.xy, color);
         return;
     }
     let weight = 1 / uniforms.frame;
-    let oldColor = textureLoad(acc, gid.xy).rgb;
+    let oldColor = textureLoad(acc, gid.xy);
     let outColor = oldColor * (1 - weight) + color * weight;
-    textureStore(out, gid.xy, vec4f(outColor, 1));
+    textureStore(out, gid.xy, outColor);
 }
 
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
@@ -218,6 +221,7 @@ fn castRay(ray: Ray) -> RayCast {
                 );
                 triangle[v] = trianglePos;
             }
+            testCount += 1;
             let intersection = intersectTriangle(ray, triangle);
             if intersection.hit {
                 let d = distance(intersection.point, ray.origin);

@@ -23,13 +23,17 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
     uv += 1;
     uv /= ${computeOutputTextureSize};
 
-    let color = textureSample(computeTexture, computeSampler, uv).rgb;
+    let color = textureSample(computeTexture, computeSampler, uv);
 
-    let exposure = 1.;
-    var toneMapped = tmoAces(color / exposure);
-    toneMapped = linearToSrgb(toneMapped);
-
-    return vec4f(toneMapped, 1);
+    let debug = false;
+    if debug {
+        return vec4f(color.a) / 1e3;
+    } else {
+        let exposure = 1.;
+        var toneMapped = tmoAces(color.rgb / exposure);
+        toneMapped = linearToSrgb(toneMapped);
+        return vec4f(toneMapped, 1);
+    }
 }
 
 fn tmoAces(x_: vec3f) -> vec3f {
