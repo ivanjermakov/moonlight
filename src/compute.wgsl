@@ -75,7 +75,8 @@ const maxDistance = 1e10;
 const maxBounces = ${maxBounces};
 const samplesPerPass = ${samplesPerPass};
 
-var<private> testCount = 0.;
+var<private> testCountTriangle = 0.;
+var<private> testCountAabb = 0.;
 
 @group(0) @binding(0) var acc: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
@@ -96,7 +97,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
     color /= samplesPerPass;
-    color.a = testCount;
+    color.a = testCountTriangle / 1e3;
+    // color.a = testCountAabb / 1e1;
 
     if uniforms.frame == 0 {
         textureStore(out, gid.xy, color);
@@ -221,7 +223,6 @@ fn castRay(ray: Ray) -> RayCast {
                 );
                 triangle[v] = trianglePos;
             }
-            testCount += 1;
             let intersection = intersectTriangle(ray, triangle);
             if intersection.hit {
                 let d = distance(intersection.point, ray.origin);
@@ -315,6 +316,7 @@ fn applyQuaternion(dir: vec3f, quat: vec4f) -> vec3f {
 
 // adapted https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm#Rust_implementation
 fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
+    testCountTriangle += 1;
     var intersection = Intersection();
 	let e1 = triangle[1] - triangle[0];
 	let e2 = triangle[2] - triangle[0];
@@ -351,6 +353,7 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
 }
 
 fn intersectAabb(ray: Ray, aabb: Aabb) -> bool {
+    testCountAabb += 1;
     let t1 = (aabb.min - ray.origin) * ray.dirInv;
     let t2 = (aabb.max - ray.origin) * ray.dirInv;
 

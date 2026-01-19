@@ -25,9 +25,9 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
     let color = textureSample(computeTexture, computeSampler, uv);
 
-    let debug = false;
+    let debug = true;
     if debug {
-        return vec4f(color.a) / 1e3;
+        return vec4f(color.a);
     } else {
         let exposure = 1.;
         var toneMapped = tmoAces(color.rgb / exposure);
