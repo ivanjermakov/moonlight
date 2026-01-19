@@ -9,9 +9,9 @@ struct Storage {
     uv: array<f32, ${meshArraySize}>,
     objects: array<SceneObject, ${objectsArraySize}>,
     materials: array<SceneMaterial, ${materialsArraySize}>,
+    bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     // array of object-space triangle indices
     bvhTriangle: array<f32, ${meshArraySize}>,
-    bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     camera: Camera,
     objectCount: f32,
     p1: f32,
@@ -125,7 +125,8 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var ior = 1.;
 
     for (var bounce = 0u; bounce < maxBounces; bounce++) {
-        let rayCast = castRay(ray);
+        // let rayCast = castRay(ray);
+        let rayCast = castRayBvh(ray);
 
         if rayCast.intersection.hit {
             let object = store.objects[rayCast.object];

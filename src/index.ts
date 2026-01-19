@@ -62,7 +62,7 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
-export const maxBounces = 8
+export const maxBounces = 2
 export const samplesPerPass = 1
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
@@ -111,6 +111,7 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
+            // if (o.name !== 'suzanne') return
             const material = o.material
             const geometry = o.geometry
             const position = geometry.attributes.position as BufferAttribute
@@ -398,13 +399,13 @@ const initCompute = async () => {
             }
         }
 
-        const leafTris = bvhNodes.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
-        console.debug('bvh', o.mesh.name, {
-            min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
-            max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
-            mean: leafTris[Math.floor(leafTris.length / 2)],
-            avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
-        })
+        // const leafTris = bvhNodes.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
+        // console.debug('bvh', o.mesh.name, bvhNodes, {
+        //     min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+        //     max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
+        //     mean: leafTris[Math.floor(leafTris.length / 2)],
+        //     avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
+        // })
 
         objectsArray.push(
             ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
@@ -413,13 +414,18 @@ const initCompute = async () => {
             o.vertexOffset,
             o.positionCount,
             o.material,
-            0,
-            0,
+            bvhNodeOffset / bvhNodeSize,
+            bvhNodes.length,
             0
         )
     }
     const objectsTypedArray = new Float32Array(sceneObjectSize * objectsArraySize)
     objectsTypedArray.set(objectsArray)
+
+    const bvhNodeTypedArray = new Float32Array(bvhNodeSize * bvhNodeArraySize)
+    bvhNodeTypedArray.set(bvhNodeArray)
+    const bvhTriangleTypedArray = new Float32Array(meshArraySize)
+    bvhTriangleTypedArray.set(bvhTriangleArray)
 
     const materialsArray: number[] = []
     for (const m of materials) {
@@ -438,11 +444,6 @@ const initCompute = async () => {
     const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)
     materialsTypedArray.set(materialsArray)
 
-    const bvhTriangleTypedArray = new Float32Array(meshArraySize)
-    bvhTriangleTypedArray.set(bvhTriangleArray)
-    const bvhNodeTypedArray = new Float32Array(bvhNodeSize * bvhNodeArraySize)
-    bvhTriangleTypedArray.set(bvhNodeArray)
-
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
         ...camera.rotation.toArray(),
@@ -458,8 +459,8 @@ const initCompute = async () => {
         ...uvArray,
         ...objectsTypedArray,
         ...materialsTypedArray,
-        ...bvhTriangleTypedArray,
         ...bvhNodeTypedArray,
+        ...bvhTriangleTypedArray,
         ...cameraArray,
         objects.length,
         0,

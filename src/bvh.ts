@@ -186,15 +186,13 @@ export const triangleByIndex = (object: SceneObject, index: number): Triangle =>
 }
 
 export const traverseBfs = (root: BvhNode): BvhNode[] => {
-    const result = []
+    const result: BvhNode[] = []
     const queue = [root]
     while (queue.length > 0) {
         const node = queue.splice(0, 1)[0]
-        switch (node.type) {
-            case 'node':
-                return [node, ...traverseBfs(node.left), ...traverseBfs(node.right)]
-            case 'leaf':
-                return [node]
+        result.push(node)
+        if (node.type === 'node') {
+            queue.push(node.left, node.right)
         }
     }
     return result
