@@ -62,22 +62,22 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
-export const maxBounces = 2
-export const samplesPerPass = 1
+export const maxBounces = 4
+export const samplesPerPass = 4
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-export const objectsArraySize = 256
-export const meshArraySize = objectsArraySize * 8192
+export const objectsArraySize = 128
+export const meshArraySize = objectsArraySize * 512
 export const materialsArraySize = 32
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
 export const bvhNodeSize = 12
 export const bvhDepth = 16
-export const bvhNodeArraySize = objectsArraySize * 4096
-export const bvhSplitAccuracy = 20
+export const bvhNodeArraySize = objectsArraySize * 256
+export const bvhSplitAccuracy = 10
 export type RunMode = 'vsync' | 'busy' | 'single'
-export const runMode = 'single' as RunMode
+export const runMode = 'vsync' as RunMode
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
 export const sceneName = 'dof' as SceneName
 
@@ -111,7 +111,7 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
-            // if (o.name !== 'suzanne') return
+            // if (o.name !== 'suzanne' && o.name !== 'ceiling') return
             const material = o.material
             const geometry = o.geometry
             const position = geometry.attributes.position as BufferAttribute
@@ -341,6 +341,7 @@ const initCompute = async () => {
             objectsArraySize,
             materialsArraySize,
             bvhNodeArraySize,
+            bvhDepth,
             maxBounces,
             samplesPerPass,
             workgroupSize: workgroupSize.join(',')
@@ -383,15 +384,15 @@ const initCompute = async () => {
         normalArray.set(o.normal, o.vertexOffset * 3)
         uvArray.set(o.uv, o.vertexOffset * 2)
 
-        const bvhNodeOffset = bvhNodeArray.length
+        const bvhNodeOffset = bvhNodeArray.length / bvhNodeSize
         const bvhNodes = traverseBfs(o.bvh)
         for (let i = 0; i < bvhNodes.length; i++) {
             const bvhNode = bvhNodes[i]
             bvhNodeArray.push(
                 ...[...bvhNode.box.min.toArray(), 0, ...bvhNode.box.max.toArray(), 0],
                 bvhNode.type === 'leaf' ? bvhTriangleArray.length : 0,
-                bvhNode.type === 'leaf' ? bvhNode.triangles.length : 0,
-                bvhNode.type === 'node' ? bvhNodeOffset + i + 1 : 0,
+                bvhNode.type === 'leaf' ? bvhNode.triangleIdxs.length : 0,
+                bvhNode.type === 'node' ? bvhNodeOffset + bvhNodes.indexOf(bvhNode.left) : 0,
                 0
             )
             if (bvhNode.type === 'leaf') {
@@ -414,7 +415,7 @@ const initCompute = async () => {
             o.vertexOffset,
             o.positionCount,
             o.material,
-            bvhNodeOffset / bvhNodeSize,
+            bvhNodeOffset,
             bvhNodes.length,
             0
         )
@@ -452,6 +453,7 @@ const initCompute = async () => {
         camera.focus,
         camera.fstop
     ]
+    // TODO: optimize, too much copying
     const storageBufferArray = [
         ...indexArray,
         ...positionArray,

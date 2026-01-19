@@ -102,8 +102,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
     color /= samplesPerPass;
-    color.a = testCountTriangle / 2e3;
-    // color.a = testCountAabb / 1e2;
+    color.a = testCountTriangle / 5e2;
+    // color.a = (testCountAabb / 2e3);
 
     if uniforms.frame == 0 {
         textureStore(out, gid.xy, color);
@@ -212,7 +212,7 @@ fn castRay(ray: Ray) -> RayCast {
     rayCast.distance = maxDistance;
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
-        if !intersectAabb(ray, object.boundingBox) {
+        if intersectAabb(ray, object.boundingBox) >= rayCast.distance {
             continue;
         }
         let indexOffset = u32(object.indexOffset);
@@ -358,7 +358,8 @@ fn intersectTriangle(ray: Ray, triangle: array<vec3f, 3>) -> Intersection {
     return intersection;
 }
 
-fn intersectAabb(ray: Ray, aabb: Aabb) -> bool {
+// distance to hit, maxDistance otherwise
+fn intersectAabb(ray: Ray, aabb: Aabb) -> f32 {
     testCountAabb += 1;
     let t1 = (aabb.min - ray.origin) * ray.dirInv;
     let t2 = (aabb.max - ray.origin) * ray.dirInv;
@@ -371,7 +372,8 @@ fn intersectAabb(ray: Ray, aabb: Aabb) -> bool {
     tmax = min(tmax, max(t1.y, t2.y));
     tmax = min(tmax, max(t1.z, t2.z));
 
-    return tmax >= max(0, tmin);
+    let hit = tmax >= max(0, tmin);
+    return select(maxDistance, tmin, hit);
 }
 
 fn outUv(pixelPos: vec2f) -> vec4f {

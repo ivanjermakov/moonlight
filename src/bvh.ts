@@ -61,11 +61,11 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
                 case 'y': axisIndex = 1; break;
                 case 'z': axisIndex = 2; break;
             }
-        const triCount = node.object.positionCount / 3
+        const vertexCount = node.object.positionCount / 3
         // intrinsic to not brute force through every possible bvh slice
         // https://www.desmos.com/calculator/5lwf9tbwym
-        const accuracy = bvhSplitAccuracy / (triCount + bvhSplitAccuracy)
-        for (let vi = 0; vi < triCount; vi += 1 / accuracy) {
+        const accuracy = bvhSplitAccuracy / (vertexCount + bvhSplitAccuracy)
+        for (let vi = 0; vi < vertexCount; vi += 1 / accuracy) {
             const splitPoint = node.object.position[3 * Math.floor(vi) + axisIndex]
             const left: Triangle[] = []
             const leftIdxs: number[] = []
@@ -74,7 +74,7 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
             for (let i = 0; i < node.triangles.length; i++) {
                 const ti = node.triangleIdxs[i]
                 const t = node.triangles[i]
-                if (t.a[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint) {
+                if (t.a[splitAxis] >= splitPoint || t.b[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint) {
                     left.push(t)
                     leftIdxs.push(ti)
                 } else {
@@ -83,7 +83,6 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
                 }
             }
             if (left.length === 0 || right.length === 0) continue
-            if (left.length === node.triangles.length || right.length === node.triangles.length) continue
 
             const leftBox = makeBox(left)
             const rightBox = makeBox(right)

@@ -11,62 +11,98 @@ struct BvhNode {
     p1: f32,
 }
 
+const bvhDepth = ${bvhDepth};
+
 fn castRayBvh(ray: Ray) -> RayCast {
     var rayCast = RayCast();
     rayCast.distance = maxDistance;
+
+    var stack: array<u32, 64>;
+    var stackIdx = 0u;
+
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
-        let root = store.bvhNode[u32(object.bvhOffset)];
-        if !intersectAabb(ray, root.aabb) {
-            continue;
-        }
-        let indexOffset = u32(object.indexOffset);
-        let vertexOffset = u32(object.vertexOffset);
-        for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
-            var triangle: array<vec3f, 3>;
-            for (var v = 0u; v < 3; v++) {
-                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let trianglePos = vec3f(
-                    store.position[triIndexGlobal],
-                    store.position[triIndexGlobal + 1],
-                    store.position[triIndexGlobal + 2],
-                );
-                triangle[v] = trianglePos;
-            }
-            let intersection = intersectTriangle(ray, triangle);
-            if intersection.hit {
-                let d = distance(intersection.point, ray.origin);
-                if d < rayCast.distance {
-                    var triNormals: array<vec3f, 3>;
-                    for (var v = 0u; v < 3; v++) {
-                        let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                        let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                        let vertexNormal = vec3f(
-                            store.normal[triIndexGlobal],
-                            store.normal[triIndexGlobal + 1],
-                            store.normal[triIndexGlobal + 2],
-                        );
-                        triNormals[v] = vertexNormal;
-                    }
-                    let u = intersection.uv.x;
-                    let v = intersection.uv.y;
-                    let normal = normalize(
-                        triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
-                    );
+        let rootIdx = u32(object.bvhOffset);
+        stack[stackIdx] = rootIdx;
+        stackIdx++;
 
-                    if dot(normal, ray.dir) > 0 {
-                        let material = store.materials[u32(object.material)];
-                        if material.transmission == 0 {
-                            continue;
+        while stackIdx > 0 {
+            stackIdx--;
+            let bvhNodeIdx = stack[stackIdx];
+            let bvhNode = store.bvhNode[bvhNodeIdx];
+            let dist = intersectAabb(ray, bvhNode.aabb);
+            if dist >= rayCast.distance {
+                continue;
+            }
+            if bvhNode.triangleCount > 0 {
+                let indexOffset = u32(object.indexOffset);
+                let vertexOffset = u32(object.vertexOffset);
+                let triangleOffset = u32(bvhNode.triangleOffset);
+                for (var bvhTriangleIdx = 0u; bvhTriangleIdx < u32(bvhNode.triangleCount); bvhTriangleIdx++) {
+                    let triangleIdx = u32(store.bvhTriangle[triangleOffset + bvhTriangleIdx]);
+                    var triangle: array<vec3f, 3>;
+                    for (var v = 0u; v < 3; v++) {
+                        let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
+                        triangle[v] = vec3f(
+                            store.position[3 * (vertexOffset + vertIdx)],
+                            store.position[3 * (vertexOffset + vertIdx) + 1],
+                            store.position[3 * (vertexOffset + vertIdx) + 2],
+                        );
+                    }
+                    let intersection = intersectTriangle(ray, triangle);
+                    if intersection.hit {
+                        let d = distance(intersection.point, ray.origin);
+                        if d < rayCast.distance {
+                            var triNormals: array<vec3f, 3>;
+                            for (var v = 0u; v < 3; v++) {
+                                let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
+                                let vertIdxGlobal = 3 * (vertexOffset + vertIdx);
+                                triNormals[v] = vec3f(
+                                    store.normal[vertIdxGlobal],
+                                    store.normal[vertIdxGlobal + 1],
+                                    store.normal[vertIdxGlobal + 2],
+                                );
+                            }
+                            let u = intersection.uv.x;
+                            let v = intersection.uv.y;
+                            let normal = normalize(
+                                triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
+                            );
+
+                            if dot(normal, ray.dir) > 0 {
+                                let material = store.materials[u32(object.material)];
+                                if material.transmission == 0 {
+                                    continue;
+                                }
+                            }
+
+                            rayCast.intersection = intersection;
+                            rayCast.normal = normal;
+                            rayCast.object = i;
+                            rayCast.face = triangleIdx;
+                            rayCast.distance = d;
                         }
                     }
-
-                    rayCast.intersection = intersection;
-                    rayCast.normal = normal;
-                    rayCast.object = i;
-                    rayCast.face = fi;
-                    rayCast.distance = d;
+                }
+            } else {
+                let idxLeft = u32(bvhNode.leafOffset);
+                let left = store.bvhNode[idxLeft];
+                let idxRight = u32(bvhNode.leafOffset + 1);
+                let right = store.bvhNode[idxRight];
+                let distLeft = intersectAabb(ray, left.aabb);
+                let distRight = intersectAabb(ray, right.aabb);
+                let leftCloser = distLeft < distRight;
+                let distNear = select(distLeft, distRight, !leftCloser); 
+                let distFar = select(distLeft, distRight, leftCloser); 
+                let idxNear = select(idxLeft, idxRight, !leftCloser);
+                let idxFar = select(idxLeft, idxRight, leftCloser);
+                if distFar < rayCast.distance {
+                    stack[stackIdx] = idxFar;
+                    stackIdx++;
+                }
+                if distNear < rayCast.distance {
+                    stack[stackIdx] = idxNear;
+                    stackIdx++;
                 }
             }
         }

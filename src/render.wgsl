@@ -25,7 +25,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
     let color = textureSample(computeTexture, computeSampler, uv);
 
-    let debug = true;
+    let debug = false;
     if debug {
         return vec4f(color.a);
     } else {
