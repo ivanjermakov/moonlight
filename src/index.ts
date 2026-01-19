@@ -12,13 +12,14 @@ import {
     Quaternion
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { BvhNode, buildBvh } from './bvh'
 import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
 import './index.css'
 import renderWgsl from './render.wgsl?raw'
 import { transformDirArray, transformPointArray } from './util'
 
-type SceneObject = {
+export type SceneObject = {
     mesh: Mesh
     index: Uint16Array
     indexCount: number
@@ -31,9 +32,10 @@ type SceneObject = {
     matrixWorld: Matrix4
     material: number
     boundingBox: Box3
+    bvh: BvhNode
 }
 
-type SceneMaterial = {
+export type SceneMaterial = {
     material: MeshStandardMaterial
     baseColor: Color
     emissive: Color
@@ -43,7 +45,7 @@ type SceneMaterial = {
     transmission: number
 }
 
-type CameraConfig = {
+export type CameraConfig = {
     camera: Camera
     matrixWorld: Matrix4
     rotation: Quaternion
@@ -57,22 +59,23 @@ const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
 
-const renderScale = 1 / 1
-const aspectRatio = 16 / 9
-const maxBounces = 8
-const samplesPerPass = 1
-const workgroupSize = [8, 8]
-const computeOutputTextureSize = 4096
-const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-const meshArraySize = 32768
-const objectsArraySize = 128
-const materialsArraySize = 32
-const sceneObjectSize = 16
-const sceneMaterialSize = 12
-type RunMode = 'vsync' | 'busy' | 'single'
-const runMode = 'single' as RunMode
-type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
-const sceneName = 'dof' as SceneName
+export const renderScale = 1 / 1
+export const aspectRatio = 16 / 9
+export const maxBounces = 8
+export const samplesPerPass = 1
+export const workgroupSize = [8, 8]
+export const computeOutputTextureSize = 4096
+export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
+export const meshArraySize = 32768
+export const objectsArraySize = 128
+export const materialsArraySize = 32
+export const sceneObjectSize = 16
+export const sceneMaterialSize = 12
+export const bvhDepth = 32
+export type RunMode = 'vsync' | 'busy' | 'single'
+export const runMode = 'single' as RunMode
+export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
+export const sceneName = 'dof' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -107,7 +110,6 @@ const main = async (): Promise<void> => {
             if (!['suzanne', 'floor', 'ceiling'].includes(o.name)) return
             const material = o.material
             const geometry = o.geometry
-            const index = geometry.index
             const position = geometry.attributes.position as BufferAttribute
             const normal = geometry.attributes.normal as BufferAttribute
             const uv = geometry.attributes.uv as BufferAttribute
@@ -153,8 +155,10 @@ const main = async (): Promise<void> => {
                 vertexOffset,
                 matrixWorld: o.matrixWorld,
                 material: materialIndex,
-                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld)
+                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
+                bvh: undefined as any
             }
+            object.bvh = buildBvh(object)
             indexOffset += object.indexCount
             vertexOffset += object.positionCount
             objects.push(object)
@@ -174,6 +178,30 @@ const main = async (): Promise<void> => {
     console.debug(objects)
     console.debug(materials)
     console.debug(camera)
+    console.debug(objects.map(o => o.bvh))
+
+    const leaves: BvhNode[] = []
+    const queue = [objects[2].bvh]
+    while (queue.length > 0) {
+        const n = queue.splice(0, 1)[0]
+        if (n.type === 'leaf') {
+            leaves.push(n)
+        } else {
+            if (n.left) {
+                queue.push(n.left)
+            }
+            if (n.right) {
+                queue.push(n.right)
+            }
+        }
+    }
+    const leafTris = leaves.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
+    console.debug('bvh', leaves, {
+        min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+        max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
+        mean: leafTris[Math.floor(leafTris.length / 2)],
+        avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
+    })
 
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
