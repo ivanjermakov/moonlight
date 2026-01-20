@@ -78,6 +78,9 @@ struct RayCast {
 
 const maxDistance = 1e10;
 const maxBounces = ${maxBounces};
+const maxBouncesDiffuse = ${maxBouncesDiffuse};
+const maxBouncesSpecular = ${maxBouncesSpecular};
+const maxBouncesTransmission = ${maxBouncesTransmission};
 const samplesPerPass = ${samplesPerPass};
 
 var<private> testCountTriangle = 0.;
@@ -120,6 +123,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     let ambientEmission = 0.;
     let ambientColor = vec3f(1);
+    var bouncesDiffuse = 0;
+    var bouncesSpecular = 0;
+    var bouncesTransmission = 0;
 
     var color = vec3f(ambientColor);
     var emission = 0.;
@@ -176,6 +182,8 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             var dir: vec3f;
             if isReflection {
+                if bouncesSpecular >= maxBouncesSpecular { break; }
+                bouncesSpecular++;
                 color *= colorSpecular;
                 dir = lerp3(reflection, scatter, material.roughness);
             } else {
@@ -184,15 +192,21 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                     let refraction = refractionDirSnell(ray.dir, normal, cosIncidence, iorFrom, iorTo);
                     let totalInternal = refraction.w == 0;
                     if totalInternal {
+                        if bouncesSpecular >= maxBouncesSpecular { break; }
+                        bouncesSpecular++;
                         color *= colorSpecular;
                         dir = lerp3(reflection, scatter, material.roughness);
                         ior = iorFrom;
                     } else {
+                        if bouncesTransmission >= maxBouncesTransmission { break; }
+                        bouncesTransmission++;
                         color *= colorSpecular;
                         dir = lerp3(refraction.xyz, scatter, material.roughness);
                         ior = iorTo;
                     }
                 } else {
+                    if bouncesDiffuse >= maxBouncesDiffuse { break; }
+                    bouncesDiffuse++;
                     color *= colorDiffuse;
                     dir = scatter;
                 }

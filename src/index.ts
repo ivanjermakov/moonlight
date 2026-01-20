@@ -62,7 +62,10 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
-export const maxBounces = 4
+export const maxBounces = 12
+export const maxBouncesDiffuse = 4
+export const maxBouncesSpecular = 4
+export const maxBouncesTransmission = 12
 export const samplesPerPass = 1
 export const timeLimit: number | undefined = 10e3
 
@@ -77,7 +80,7 @@ export const sceneMaterialSize = 12
 export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
-export const bvhSplitAccuracy = 1024
+export const bvhSplitAccuracy = 128
 export type RunMode = 'vsync' | 'busy' | 'single'
 export const runMode = 'vsync' as RunMode
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
@@ -112,6 +115,7 @@ const main = async (): Promise<void> => {
     const gltfPath = `/${sceneName}.glb`
     const gltfData = await (await fetch(gltfPath)).arrayBuffer()
     const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
+
     let indexOffset = 0
     let vertexOffset = 0
     gltf.scene.traverse(o => {
@@ -363,6 +367,9 @@ const initCompute = async () => {
             bvhNodeArraySize,
             bvhDepth,
             maxBounces,
+            maxBouncesDiffuse,
+            maxBouncesSpecular,
+            maxBouncesTransmission,
             samplesPerPass,
             workgroupSize: workgroupSize.join(',')
         })
