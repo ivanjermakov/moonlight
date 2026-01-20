@@ -68,6 +68,7 @@ export const maxBouncesSpecular = 4
 export const maxBouncesTransmission = 12
 export const samplesPerPass = 1
 export const timeLimit: number | undefined = 10e3
+export const debugOverlay = false
 
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
@@ -545,7 +546,7 @@ const initRender = async () => {
     device.queue.writeBuffer(clipVertexBuffer, 0, clipPlane)
 
     const renderModule = device.createShaderModule({
-        code: applyTemplate(renderWgsl, { commons, computeOutputTextureSize })
+        code: applyTemplate(renderWgsl, { commons, debugOverlay, computeOutputTextureSize })
     })
 
     const layout = device.createBindGroupLayout({
@@ -597,7 +598,7 @@ const initRender = async () => {
     })
 }
 
-const applyTemplate = (code: string, variables: Record<string, string | number>): string => {
+const applyTemplate = (code: string, variables: Record<string, string | number | boolean>): string => {
     let applied = code
     for (const [name, variable] of Object.entries(variables)) {
         applied = applied.replaceAll(`\${${name}}`, variable.toString())

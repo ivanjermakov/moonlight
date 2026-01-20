@@ -4,6 +4,8 @@ ${commons}
 @group(0) @binding(1) var computeSampler: sampler;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
+const debugOverlay = ${debugOverlay};
+
 struct VertexOut {
     @builtin(position) pos: vec4f,
     @location(0) uv: vec2f
@@ -25,8 +27,7 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
     let color = textureSample(computeTexture, computeSampler, uv);
 
-    let debug = false;
-    if debug {
+    if debugOverlay {
         if color.a > 1 {
             return vec4f(color.a, 0, 0, 1);
         } else if color.a > .5 {
