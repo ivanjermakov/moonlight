@@ -112,86 +112,6 @@ const main = async (): Promise<void> => {
     info = document.getElementById('info')!
     info.innerText = 'loading'
 
-    const gltfPath = `/${sceneName}.glb`
-    const gltfData = await (await fetch(gltfPath)).arrayBuffer()
-    const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
-
-    let indexOffset = 0
-    let vertexOffset = 0
-    gltf.scene.traverse(o => {
-        if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
-            const material = o.material
-            const geometry = o.geometry
-            const position = geometry.attributes.position as BufferAttribute
-            const normal = geometry.attributes.normal as BufferAttribute
-            const uv = geometry.attributes.uv as BufferAttribute
-            let materialIndex = materials.findIndex(m => m.material.name === material.name)
-            if (materialIndex < 0) {
-                materialIndex = materials.length
-                const sceneMaterial: SceneMaterial = {
-                    material,
-                    baseColor: material.color,
-                    emissive: material.emissive,
-                    metallic: material.metalness,
-                    roughness: material.roughness,
-                    ior: 1,
-                    transmission: 0
-                }
-                if (material instanceof MeshPhysicalMaterial) {
-                    sceneMaterial.ior = material.ior
-                    sceneMaterial.transmission = material.transmission
-                }
-                materials.push(sceneMaterial)
-            }
-            if (!geometry.index) {
-                console.warn('no index buffer', o)
-                return
-            }
-            if (!geometry.boundingBox) {
-                console.warn('no bounding box', o)
-                return
-            }
-            if (!(position.count === normal.count && position.count === uv.count)) {
-                console.warn('inconsistent buffer size', o)
-                return
-            }
-            const object: SceneObject = {
-                mesh: o,
-                index: geometry.index!.array as Uint16Array,
-                indexCount: geometry.index.count,
-                position: transformPointArray(position.array as Float32Array, o.matrixWorld),
-                positionCount: position.count,
-                normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
-                uv: uv.array as Float32Array,
-                indexOffset,
-                vertexOffset,
-                matrixWorld: o.matrixWorld,
-                material: materialIndex,
-                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
-                bvh: undefined as any
-            }
-            object.bvh = buildBvh(object)
-            indexOffset += object.indexCount
-            vertexOffset += object.positionCount
-            objects.push(object)
-        }
-        if (o instanceof PerspectiveCamera) {
-            camera = {
-                camera: o,
-                sensorWidth: o.filmGauge,
-                focalLength: o.getFocalLength(),
-                matrixWorld: o.matrixWorld,
-                rotation: o.quaternion,
-                fstop: o.userData.aperture_fstop ?? 0,
-                focus: o.userData.focus_distance ?? 0
-            }
-        }
-    })
-    console.debug(objects)
-    console.debug(materials)
-    console.debug(camera)
-    console.debug(objects.map(o => o.bvh))
-
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
         return
@@ -228,6 +148,7 @@ const main = async (): Promise<void> => {
         }
     })
 
+    await initScene()
     await initCompute()
     await initRender()
 
@@ -354,6 +275,88 @@ const initDevice = async (): Promise<GPUDevice | undefined> => {
     const adapter = await navigator.gpu.requestAdapter()
     if (!adapter) return undefined
     return await adapter.requestDevice()
+}
+
+const initScene = async () => {
+    const gltfPath = `/${sceneName}.glb`
+    const gltfData = await (await fetch(gltfPath)).arrayBuffer()
+    const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
+
+    let indexOffset = 0
+    let vertexOffset = 0
+    gltf.scene.traverse(o => {
+        if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
+            const material = o.material
+            const geometry = o.geometry
+            const position = geometry.attributes.position as BufferAttribute
+            const normal = geometry.attributes.normal as BufferAttribute
+            const uv = geometry.attributes.uv as BufferAttribute
+            let materialIndex = materials.findIndex(m => m.material.name === material.name)
+            if (materialIndex < 0) {
+                materialIndex = materials.length
+                const sceneMaterial: SceneMaterial = {
+                    material,
+                    baseColor: material.color,
+                    emissive: material.emissive,
+                    metallic: material.metalness,
+                    roughness: material.roughness,
+                    ior: 1,
+                    transmission: 0
+                }
+                if (material instanceof MeshPhysicalMaterial) {
+                    sceneMaterial.ior = material.ior
+                    sceneMaterial.transmission = material.transmission
+                }
+                materials.push(sceneMaterial)
+            }
+            if (!geometry.index) {
+                console.warn('no index buffer', o)
+                return
+            }
+            if (!geometry.boundingBox) {
+                console.warn('no bounding box', o)
+                return
+            }
+            if (!(position.count === normal.count && position.count === uv.count)) {
+                console.warn('inconsistent buffer size', o)
+                return
+            }
+            const object: SceneObject = {
+                mesh: o,
+                index: geometry.index!.array as Uint16Array,
+                indexCount: geometry.index.count,
+                position: transformPointArray(position.array as Float32Array, o.matrixWorld),
+                positionCount: position.count,
+                normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
+                uv: uv.array as Float32Array,
+                indexOffset,
+                vertexOffset,
+                matrixWorld: o.matrixWorld,
+                material: materialIndex,
+                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
+                bvh: undefined as any
+            }
+            object.bvh = buildBvh(object)
+            indexOffset += object.indexCount
+            vertexOffset += object.positionCount
+            objects.push(object)
+        }
+        if (o instanceof PerspectiveCamera) {
+            camera = {
+                camera: o,
+                sensorWidth: o.filmGauge,
+                focalLength: o.getFocalLength(),
+                matrixWorld: o.matrixWorld,
+                rotation: o.quaternion,
+                fstop: o.userData.aperture_fstop ?? 0,
+                focus: o.userData.focus_distance ?? 0
+            }
+        }
+    })
+    console.debug(objects)
+    console.debug(materials)
+    console.debug(camera)
+    console.debug(objects.map(o => o.bvh))
 }
 
 const initCompute = async () => {
