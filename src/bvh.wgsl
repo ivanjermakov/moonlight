@@ -17,7 +17,7 @@ fn castRayBvh(ray: Ray) -> RayCast {
     var rayCast = RayCast();
     rayCast.distance = maxDistance;
 
-    var stack: array<u32, 64>;
+    var stack: array<u32, bvhDepth>;
     var stackIdx = 0u;
 
     for (var i = 0u; i < u32(store.objectCount); i++) {
@@ -30,10 +30,6 @@ fn castRayBvh(ray: Ray) -> RayCast {
             stackIdx--;
             let bvhNodeIdx = stack[stackIdx];
             let bvhNode = store.bvhNode[bvhNodeIdx];
-            let dist = intersectAabb(ray, bvhNode.aabb);
-            if dist >= rayCast.distance {
-                continue;
-            }
             if bvhNode.triangleCount > 0 {
                 let indexOffset = u32(object.indexOffset);
                 let vertexOffset = u32(object.vertexOffset);
@@ -87,15 +83,18 @@ fn castRayBvh(ray: Ray) -> RayCast {
             } else {
                 let idxLeft = u32(bvhNode.leafOffset);
                 let left = store.bvhNode[idxLeft];
+                let distLeft = intersectAabb(ray, left.aabb);
                 let idxRight = u32(bvhNode.leafOffset + 1);
                 let right = store.bvhNode[idxRight];
-                let distLeft = intersectAabb(ray, left.aabb);
                 let distRight = intersectAabb(ray, right.aabb);
+
                 let leftCloser = distLeft < distRight;
+
                 let distNear = select(distLeft, distRight, !leftCloser); 
-                let distFar = select(distLeft, distRight, leftCloser); 
                 let idxNear = select(idxLeft, idxRight, !leftCloser);
+                let distFar = select(distLeft, distRight, leftCloser); 
                 let idxFar = select(idxLeft, idxRight, leftCloser);
+
                 if distFar < rayCast.distance {
                     stack[stackIdx] = idxFar;
                     stackIdx++;

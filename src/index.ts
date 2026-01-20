@@ -62,8 +62,8 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
-export const maxBounces = 4
-export const samplesPerPass = 4
+export const maxBounces = 8
+export const samplesPerPass = 8
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -73,9 +73,9 @@ export const materialsArraySize = 32
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
 export const bvhNodeSize = 12
-export const bvhDepth = 16
+export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
-export const bvhSplitAccuracy = 10
+export const bvhSplitAccuracy = 128
 export type RunMode = 'vsync' | 'busy' | 'single'
 export const runMode = 'vsync' as RunMode
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
@@ -273,9 +273,10 @@ const update = async () => {
     const dtps = dt / samplesPerPass
     info.innerText = [
         sceneName,
-        ['dt  ', dt.toFixed(1).padEnd(6, ' '), dtps.toFixed(1).padEnd(5, ' ')].join(' '),
-        ['smpl', frame * samplesPerPass].join(' '),
-        ['elps', `${((start - firstFrameStart) / 1000).toFixed()}s`].join(' ')
+        ['dt  ', dt.toFixed(1).padStart(6, ' '), dtps.toFixed(1).padStart(5, ' ')].join(' '),
+        ['fps ', (1000 / dt).toFixed().padStart(6, ' '), (1000 / dtps).toFixed().padStart(5, ' ')].join(' '),
+        ['smpl', (frame * samplesPerPass).toFixed().padStart(6, ' ')].join(' '),
+        ['et  ', `${((start - firstFrameStart) / 1000).toFixed().padStart(5, ' ')}s`].join(' ')
     ].join('\n')
 
     frameStart = start
