@@ -62,12 +62,13 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
+export const renderHeight = 1440 as number | 'dynamic'
 export const maxBounces = 12
 export const maxBouncesDiffuse = 4
 export const maxBouncesSpecular = 4
 export const maxBouncesTransmission = 12
 export const samplesPerPass = 1
-export const timeLimit: number | undefined = 10e3
+export const timeLimit: number | undefined = 120e3
 export const debugOverlay = false
 
 export const workgroupSize = [8, 8]
@@ -82,10 +83,9 @@ export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
 export const bvhSplitAccuracy = 128
-export type RunMode = 'vsync' | 'busy' | 'single'
-export const runMode = 'vsync' as RunMode
+export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
-export const sceneName = 'cornell-box' as SceneName
+export const sceneName: SceneName = 'cornell-box'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -133,10 +133,20 @@ const main = async (): Promise<void> => {
 
     const resize = () => {
         const dpr = window.devicePixelRatio
-        canvas.width = window.innerWidth * dpr
-        canvas.height = window.innerHeight * dpr
-        resolution = [canvas.width * renderScale, canvas.height * renderScale]
-        frame = -1
+        if (renderHeight === 'dynamic') {
+            canvas.width = window.innerWidth * dpr
+            canvas.height = window.innerHeight * dpr
+            resolution = [canvas.width * renderScale, canvas.height * renderScale]
+            canvas.style.width = '100%'
+            canvas.style.height = '100%'
+            frame = -1
+        } else {
+            resolution = [renderHeight * aspectRatio * renderScale, renderHeight * renderScale]
+            canvas.width = resolution[0]
+            canvas.height = resolution[1]
+            canvas.style.width = `${canvas.width / renderScale / dpr}px`
+            canvas.style.height = `${canvas.height / renderScale / dpr}px`
+        }
         console.debug('resize', [canvas.width, canvas.height], resolution, canvas.width / canvas.height)
     }
     window.addEventListener('resize', resize)
@@ -153,7 +163,7 @@ const main = async (): Promise<void> => {
     await initCompute()
     await initRender()
 
-    switch (runMode as RunMode) {
+    switch (runMode) {
         case 'vsync':
             requestAnimationFrame(loop)
             return
@@ -163,6 +173,8 @@ const main = async (): Promise<void> => {
         case 'busy':
             while (true) {
                 await update()
+                // don't freeze browser when timeLimit is reached
+                await new Promise(d => setTimeout(d))
             }
     }
 }
