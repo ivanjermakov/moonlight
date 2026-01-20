@@ -106,6 +106,9 @@ let frameStart: number = 0
 let capture = false
 
 const main = async (): Promise<void> => {
+    info = document.getElementById('info')!
+    info.innerText = 'loading'
+
     const gltfPath = `/${sceneName}.glb`
     const gltfData = await (await fetch(gltfPath)).arrayBuffer()
     const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
@@ -198,7 +201,6 @@ const main = async (): Promise<void> => {
     }
     console.debug(device)
 
-    info = document.getElementById('info')!
     canvas = document.getElementById('canvas') as HTMLCanvasElement
     ctx = canvas.getContext('webgpu')!
     console.debug(ctx)
@@ -209,7 +211,7 @@ const main = async (): Promise<void> => {
         canvas.width = window.innerWidth * dpr
         canvas.height = window.innerHeight * dpr
         resolution = [canvas.width * renderScale, canvas.height * renderScale]
-        frame = 0
+        frame = -1
         console.debug('resize', [canvas.width, canvas.height], resolution, canvas.width / canvas.height)
     }
     window.addEventListener('resize', resize)
@@ -246,9 +248,15 @@ const loop = async () => {
 
 const update = async () => {
     const start = performance.now()
+    const lastFrameStart = frameStart
+    frameStart = start
+    if (frame <= 0) {
+        frame = 0
+        firstFrameStart = frameStart
+    }
+
     const elapsed = start - firstFrameStart
     const timeOut = timeLimit !== undefined && elapsed >= timeLimit
-
     if (timeOut && !capture) return
 
     compute()
@@ -259,22 +267,20 @@ const update = async () => {
 
     await device.queue.onSubmittedWorkDone()
 
-    const dt = start - frameStart
+    const dt = start - lastFrameStart
     const dtps = dt / samplesPerPass
     info.innerText = [
         sceneName,
         ['dt  ', dt.toFixed(1).padStart(6, ' '), dtps.toFixed(1).padStart(5, ' ')].join(' '),
         ['fps ', (1000 / dt).toFixed(1).padStart(6, ' '), (1000 / dtps).toFixed(1).padStart(5, ' ')].join(' '),
-        ['smpl', elapsed.toFixed().padStart(6, ' ')].join(' '),
+        ['smpl', (frame * samplesPerPass).toFixed().padStart(6, ' ')].join(' '),
         [
             'time',
-            `${((start - firstFrameStart) / 1000).toFixed().padStart(5, ' ')}s`,
+            `${(elapsed / 1000).toFixed().padStart(5, ' ')}s`,
             timeLimit !== undefined ? `${(timeLimit / 1000).toFixed().padStart(4, ' ')}s` : ''
         ].join(' ')
     ].join('\n')
 
-    frameStart = start
-    if (frame === 0) firstFrameStart = frameStart
     frame++
 }
 
