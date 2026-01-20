@@ -133,6 +133,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             if material.emissiveColor.a > 1 {
                 emission *= material.emissiveColor.a;
+                color *= material.emissiveColor.rgb;
                 break;
             }
 
@@ -146,7 +147,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 normal *= -1;
                 cosIncidence *= -1;
             }
-
 
             var iorFrom: f32;
             var iorTo: f32;
