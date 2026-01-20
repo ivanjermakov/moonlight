@@ -168,6 +168,10 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             let reflection = ray.dir - 2 * cosIncidence * normal;
             var scatter = randomDir3();
+            if dot(scatter, normal) < 0 {
+                scatter *= -1;
+            }
+
             var dir: vec3f;
             if isReflection {
                 color *= colorSpecular;
