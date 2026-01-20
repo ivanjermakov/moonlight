@@ -1,14 +1,15 @@
 struct BvhNode {
-    aabb: Aabb,
-    // into store.bvhTriangle
-    triangleOffset: f32,
+    aabbMin: vec3f,
+    // if type leaf:
+    //   into store.bvhTriangle
+    // if type node:
+    //   into store.bvhNode
+    //   store.bvhNode[leafOffset] is node.left
+    //   store.bvhNode[leafOffset + 1] is node.right
+    //   only valid if triangleCount == 0
+    triangleOrLeafOffset: f32,
+    aabbMax: vec3f,
     triangleCount: f32,
-    // into store.bvhNode
-    // store.bvhNode[leafOffset] is node.left
-    // store.bvhNode[leafOffset + 1] is node.right
-    // only valid if triangleCount == 0
-    leafOffset: f32,
-    p1: f32,
 }
 
 const bvhDepth = ${bvhDepth};
@@ -33,7 +34,7 @@ fn castRayBvh(ray: Ray) -> RayCast {
             if bvhNode.triangleCount > 0 {
                 let indexOffset = u32(object.indexOffset);
                 let vertexOffset = u32(object.vertexOffset);
-                let triangleOffset = u32(bvhNode.triangleOffset);
+                let triangleOffset = u32(bvhNode.triangleOrLeafOffset);
                 for (var bvhTriangleIdx = 0u; bvhTriangleIdx < u32(bvhNode.triangleCount); bvhTriangleIdx++) {
                     let triangleIdx = u32(store.bvhTriangle[triangleOffset + bvhTriangleIdx]);
                     var triangle: array<vec3f, 3>;
@@ -81,12 +82,14 @@ fn castRayBvh(ray: Ray) -> RayCast {
                     }
                 }
             } else {
-                let idxLeft = u32(bvhNode.leafOffset);
+                let idxLeft = u32(bvhNode.triangleOrLeafOffset);
                 let left = store.bvhNode[idxLeft];
-                let distLeft = intersectAabb(ray, left.aabb);
-                let idxRight = u32(bvhNode.leafOffset + 1);
+                let aabbLeft = Aabb(left.aabbMin, left.aabbMax);
+                let distLeft = intersectAabb(ray, aabbLeft);
+                let idxRight = u32(bvhNode.triangleOrLeafOffset + 1);
                 let right = store.bvhNode[idxRight];
-                let distRight = intersectAabb(ray, right.aabb);
+                let aabbRight = Aabb(right.aabbMin, right.aabbMax);
+                let distRight = intersectAabb(ray, aabbRight);
 
                 let leftCloser = distLeft < distRight;
 

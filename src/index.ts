@@ -72,7 +72,7 @@ export const meshArraySize = objectsArraySize * 512
 export const materialsArraySize = 32
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
-export const bvhNodeSize = 12
+export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
 export const bvhSplitAccuracy = 128
@@ -390,11 +390,10 @@ const initCompute = async () => {
         for (let i = 0; i < bvhNodes.length; i++) {
             const bvhNode = bvhNodes[i]
             bvhNodeArray.push(
-                ...[...bvhNode.box.min.toArray(), 0, ...bvhNode.box.max.toArray(), 0],
-                bvhNode.type === 'leaf' ? bvhTriangleArray.length : 0,
-                bvhNode.type === 'leaf' ? bvhNode.triangleIdxs.length : 0,
-                bvhNode.type === 'node' ? bvhNodeOffset + bvhNodes.indexOf(bvhNode.left) : 0,
-                0
+                ...bvhNode.box.min.toArray(),
+                bvhNode.type === 'leaf' ? bvhTriangleArray.length : bvhNodeOffset + bvhNodes.indexOf(bvhNode.left),
+                ...bvhNode.box.max.toArray(),
+                bvhNode.type === 'leaf' ? bvhNode.triangleIdxs.length : 0
             )
             if (bvhNode.type === 'leaf') {
                 bvhTriangleArray.push(...bvhNode.triangleIdxs)
