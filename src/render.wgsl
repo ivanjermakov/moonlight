@@ -27,13 +27,13 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
 
     let debug = false;
     if debug {
-    if color.a > 1 {
-        return vec4f(color.a, 0, 0, 1);
-    } else if color.a > .5 {
-        return vec4f(color.a, color.a, 0, 1);
-    } else {
-        return vec4f(vec3f(color.a), 1);
-    }
+        if color.a > 1 {
+            return vec4f(color.a, 0, 0, 1);
+        } else if color.a > .5 {
+            return vec4f(color.a, color.a, 0, 1);
+        } else {
+            return vec4f(vec3f(color.a), 1);
+        }
     } else {
         let exposure = 1.;
         var toneMapped = tmoAces(color.rgb / exposure);
