@@ -23,6 +23,11 @@ fn castRay(ray: Ray) -> RayCast {
 
     for (var i = 0u; i < u32(store.objectCount); i++) {
         let object = store.objects[i];
+
+        if (intersectAabb(ray, object.boundingBox) >= maxDistance) {
+            continue;
+        }
+
         let rootIdx = u32(object.bvhOffset);
         stack[stackIdx] = rootIdx;
         stackIdx++;
