@@ -64,6 +64,8 @@ export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
 export const maxBounces = 4
 export const samplesPerPass = 1
+export const timeLimit: number | undefined = 10e3
+
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -244,27 +246,16 @@ const loop = async () => {
 
 const update = async () => {
     const start = performance.now()
+    const elapsed = start - firstFrameStart
+    const timeOut = timeLimit !== undefined && elapsed >= timeLimit
+
+    if (timeOut && !capture) return
 
     compute()
     draw()
+    downloadCapture()
 
-    if (capture) {
-        capture = false
-        const downCanvas = new OffscreenCanvas(canvas.width, canvas.height)
-        const downCtx = downCanvas.getContext('2d')!
-        downCtx.drawImage(canvas, 0, 0)
-        const blob = await downCanvas.convertToBlob({ type: 'image/png' })
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `${sceneName}-${new Date()
-            .toISOString()
-            .replace(/T/, '_')
-            .replace(/:/g, '-')
-            .replace(/\..+/, '')
-            .replace(/-/, '-')}.png`
-        a.click()
-        URL.revokeObjectURL(a.href)
-    }
+    if (timeOut) return
 
     await device.queue.onSubmittedWorkDone()
 
@@ -274,13 +265,36 @@ const update = async () => {
         sceneName,
         ['dt  ', dt.toFixed(1).padStart(6, ' '), dtps.toFixed(1).padStart(5, ' ')].join(' '),
         ['fps ', (1000 / dt).toFixed(1).padStart(6, ' '), (1000 / dtps).toFixed(1).padStart(5, ' ')].join(' '),
-        ['smpl', (frame * samplesPerPass).toFixed().padStart(6, ' ')].join(' '),
-        ['et  ', `${((start - firstFrameStart) / 1000).toFixed().padStart(5, ' ')}s`].join(' ')
+        ['smpl', elapsed.toFixed().padStart(6, ' ')].join(' '),
+        [
+            'time',
+            `${((start - firstFrameStart) / 1000).toFixed().padStart(5, ' ')}s`,
+            timeLimit !== undefined ? `${(timeLimit / 1000).toFixed().padStart(4, ' ')}s` : ''
+        ].join(' ')
     ].join('\n')
 
     frameStart = start
     if (frame === 0) firstFrameStart = frameStart
     frame++
+}
+
+const downloadCapture = async () => {
+    if (!capture) return
+    capture = false
+    const downCanvas = new OffscreenCanvas(canvas.width, canvas.height)
+    const downCtx = downCanvas.getContext('2d')!
+    downCtx.drawImage(canvas, 0, 0)
+    const blob = await downCanvas.convertToBlob({ type: 'image/png' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${sceneName}-${new Date()
+        .toISOString()
+        .replace(/T/, '_')
+        .replace(/:/g, '-')
+        .replace(/\..+/, '')
+        .replace(/-/, '-')}.png`
+    a.click()
+    URL.revokeObjectURL(a.href)
 }
 
 const writeUniforms = () => {
