@@ -61,12 +61,12 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
                 case 'y': axisIndex = 1; break;
                 case 'z': axisIndex = 2; break;
             }
-        const vertexCount = node.object.positionCount / 3
         // intrinsic to not brute force through every possible bvh slice
         // https://www.desmos.com/calculator/5lwf9tbwym
-        const accuracy = bvhSplitAccuracy / (vertexCount + bvhSplitAccuracy)
-        for (let vi = 0; vi < vertexCount; vi += 1 / accuracy) {
-            const splitPoint = node.object.position[3 * Math.floor(vi) + axisIndex]
+        const accuracy = bvhSplitAccuracy / (node.object.indexCount + bvhSplitAccuracy)
+        for (let vi = 0; vi < node.object.indexCount; vi += 1 / accuracy) {
+            const vertIdx = node.object.index[3 * Math.floor(vi)]
+            const splitPoint = node.object.position[3 * vertIdx + axisIndex]
             const left: Triangle[] = []
             const leftIdxs: number[] = []
             const right: Triangle[] = []
