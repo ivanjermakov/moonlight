@@ -215,7 +215,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
     } else {
         sensorSize = vec2f(store.camera.sensorWidth, store.camera.sensorWidth / aspect);
     }
-    let offsetSubpixel = random2f() * 2 - 1;
+    let offsetSubpixel = random2f() - .5;
     let pixelPosNorm = ((pixelPos + .5 + offsetSubpixel) / uniforms.outSize) - .5;
     let dirLocal = normalize(vec3f(
         pixelPosNorm.x * sensorSize.x,
