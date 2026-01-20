@@ -84,8 +84,8 @@ export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
 export const bvhSplitAccuracy = 128
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
-export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
-export const sceneName: SceneName = 'cornell-box'
+export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof' | 'additive-light'
+export const sceneName: SceneName = 'rough-metallic'
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement

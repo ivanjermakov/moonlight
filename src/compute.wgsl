@@ -170,7 +170,14 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let nonMetalReflectance = 0.08;
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
-            let colorSpecular = lerp3(vec3f(1), material.baseColor.rgb, max(material.metallic, material.transmission));
+            // TODO: more science
+            let lightness = max(max(material.baseColor.r, material.baseColor.g), material.baseColor.b);
+            let colorSpecularNonMetal = vec3f(min(nonMetalReflectance, lightness));
+            let colorSpecular = lerp3(
+                colorSpecularNonMetal,
+                material.baseColor.rgb,
+                max(material.metallic, material.transmission)
+            );
             let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
             let isReflection = clamp(max(material.metallic, reflectance), nonMetalReflectance, 1) > randomf();
 
