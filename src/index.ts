@@ -62,8 +62,8 @@ let camera!: CameraConfig
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
-export const maxBounces = 8
-export const samplesPerPass = 8
+export const maxBounces = 4
+export const samplesPerPass = 1
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -75,11 +75,11 @@ export const sceneMaterialSize = 12
 export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
-export const bvhSplitAccuracy = 128
+export const bvhSplitAccuracy = 1024
 export type RunMode = 'vsync' | 'busy' | 'single'
 export const runMode = 'vsync' as RunMode
 export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof'
-export const sceneName = 'dof' as SceneName
+export const sceneName = 'cornell-box' as SceneName
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -111,7 +111,6 @@ const main = async (): Promise<void> => {
     let vertexOffset = 0
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
-            // if (o.name !== 'suzanne' && o.name !== 'ceiling') return
             const material = o.material
             const geometry = o.geometry
             const position = geometry.attributes.position as BufferAttribute
@@ -400,7 +399,7 @@ const initCompute = async () => {
             }
         }
 
-        // const leafTris = bvhNodes.map(l => (l.type === 'leaf' ? l.triangles.length : 0))
+        // const leafTris = bvhNodes.filter(l => l.type === 'leaf').map(l => l.triangles.length).toSorted((a, b) => a - b)
         // console.debug('bvh', o.mesh.name, bvhNodes, {
         //     min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
         //     max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
@@ -436,8 +435,7 @@ const initCompute = async () => {
             ...m.emissive,
             m.material.emissiveIntensity,
             m.metallic,
-            // TODO: explain
-            m.roughness ** 2,
+            m.roughness,
             m.ior,
             m.transmission
         )

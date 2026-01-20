@@ -6,3 +6,5 @@
 - [ ] Normal maps
 - [ ] Roughness maps
 - [ ] Bloom
+- [ ] Artifacts on meshes containing polys
+- [ ] Fog

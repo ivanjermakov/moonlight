@@ -101,8 +101,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     for (var i = 0u; i < samplesPerPass; i++) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
-    color.a = testCountTriangle / 50;
-    // color.a = (testCountAabb / 1e3);
+    color.a = testCountTriangle / 1e2;
+    // color.a = (testCountAabb / 2e2);
     color /= samplesPerPass;
 
     if uniforms.frame == 0 {
@@ -116,7 +116,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
-    let ambientEmission = .1;
+    let ambientEmission = 0.;
     let ambientColor = vec3f(1);
 
     var color = vec3f(ambientColor);
