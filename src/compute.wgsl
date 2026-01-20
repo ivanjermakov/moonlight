@@ -124,7 +124,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var ray = rayStart;
     var ior = 1.;
 
-    for (var bounce = 0u; bounce < maxBounces; bounce++) {
+    for (var bounce = 0u; bounce < maxBounces + 1; bounce++) {
         let rayCast = castRay(ray);
 
         if rayCast.intersection.hit {
@@ -198,7 +198,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             emission = 0;
             break;
         }
-        if bounce == maxBounces - 1 {
+        if bounce == maxBounces {
             emission = ambientEmission;
         }
     }
