@@ -161,7 +161,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 iorTo = 1;
             }
 
-            let nonMetalReflectance = 0.04;
+            let nonMetalReflectance = 0.08;
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
             let colorSpecular = material.baseColor.rgb;
