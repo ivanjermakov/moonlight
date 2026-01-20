@@ -125,8 +125,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var ior = 1.;
 
     for (var bounce = 0u; bounce < maxBounces; bounce++) {
-        // let rayCast = castRay(ray);
-        let rayCast = castRayBvh(ray);
+        let rayCast = castRay(ray);
 
         if rayCast.intersection.hit {
             let object = store.objects[rayCast.object];
@@ -205,68 +204,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     }
 
     return color * emission;
-}
-
-fn castRay(ray: Ray) -> RayCast {
-    var rayCast = RayCast();
-    rayCast.distance = maxDistance;
-    for (var i = 0u; i < u32(store.objectCount); i++) {
-        let object = store.objects[i];
-        if intersectAabb(ray, object.boundingBox) >= rayCast.distance {
-            continue;
-        }
-        let indexOffset = u32(object.indexOffset);
-        let vertexOffset = u32(object.vertexOffset);
-        for (var fi = 0u; fi < u32(object.indexCount / 3); fi++) {
-            var triangle: array<vec3f, 3>;
-            for (var v = 0u; v < 3; v++) {
-                let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                let trianglePos = vec3f(
-                    store.position[triIndexGlobal],
-                    store.position[triIndexGlobal + 1],
-                    store.position[triIndexGlobal + 2],
-                );
-                triangle[v] = trianglePos;
-            }
-            let intersection = intersectTriangle(ray, triangle);
-            if intersection.hit {
-                let d = distance(intersection.point, ray.origin);
-                if d < rayCast.distance {
-                    var triNormals: array<vec3f, 3>;
-                    for (var v = 0u; v < 3; v++) {
-                        let triIndex = u32(store.index[indexOffset + 3 * fi + v]);
-                        let triIndexGlobal = 3 * (vertexOffset + triIndex);
-                        let vertexNormal = vec3f(
-                            store.normal[triIndexGlobal],
-                            store.normal[triIndexGlobal + 1],
-                            store.normal[triIndexGlobal + 2],
-                        );
-                        triNormals[v] = vertexNormal;
-                    }
-                    let u = intersection.uv.x;
-                    let v = intersection.uv.y;
-                    let normal = normalize(
-                        triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
-                    );
-
-                    if dot(normal, ray.dir) > 0 {
-                        let material = store.materials[u32(object.material)];
-                        if material.transmission == 0 {
-                            continue;
-                        }
-                    }
-
-                    rayCast.intersection = intersection;
-                    rayCast.normal = normal;
-                    rayCast.object = i;
-                    rayCast.face = fi;
-                    rayCast.distance = d;
-                }
-            }
-        }
-    }
-    return rayCast;
 }
 
 fn cameraRay(pixelPos: vec2f) -> Ray {

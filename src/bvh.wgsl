@@ -14,7 +14,7 @@ struct BvhNode {
 
 const bvhDepth = ${bvhDepth};
 
-fn castRayBvh(ray: Ray) -> RayCast {
+fn castRay(ray: Ray) -> RayCast {
     var rayCast = RayCast();
     rayCast.distance = maxDistance;
 
