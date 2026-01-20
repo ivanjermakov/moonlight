@@ -147,8 +147,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 cosIncidence *= -1;
             }
 
-            let reflection = ray.dir - 2 * cosIncidence * normal;
-            let scatter = randomDir3();
 
             var iorFrom: f32;
             var iorTo: f32;
@@ -164,10 +162,12 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let nonMetalReflectance = 0.08;
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
-            let colorSpecular = material.baseColor.rgb;
+            let colorSpecular = lerp3(vec3f(1), material.baseColor.rgb, material.metallic);
             let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
             let isReflection = clamp(max(material.metallic, reflectance), nonMetalReflectance, 1) > randomf();
 
+            let reflection = ray.dir - 2 * cosIncidence * normal;
+            var scatter = randomDir3();
             var dir: vec3f;
             if isReflection {
                 color *= colorSpecular;
