@@ -120,7 +120,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     let ambientColor = vec3f(1);
 
     var color = vec3f(ambientColor);
-    var emission = 1.;
+    var emission = 0.;
     var ray = rayStart;
     var ior = 1.;
 
@@ -132,7 +132,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let material = store.materials[u32(object.material)];
 
             if material.emissiveColor.a > 1 {
-                emission *= material.emissiveColor.a;
+                emission += material.emissiveColor.a;
                 color *= material.emissiveColor.rgb;
                 break;
             }
@@ -162,7 +162,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let nonMetalReflectance = 0.08;
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
-            let colorSpecular = lerp3(vec3f(1), material.baseColor.rgb, material.metallic);
+            let colorSpecular = lerp3(vec3f(1), material.baseColor.rgb, max(material.metallic, material.transmission));
             let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
             let isReflection = clamp(max(material.metallic, reflectance), nonMetalReflectance, 1) > randomf();
 
@@ -199,7 +199,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
         } else {
-            emission = 0;
             break;
         }
         if bounce == maxBounces {
