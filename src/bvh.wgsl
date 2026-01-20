@@ -18,7 +18,7 @@ fn castRay(ray: Ray) -> RayCast {
     var rayCast = RayCast();
     rayCast.distance = maxDistance;
 
-    var stack: array<u32, bvhDepth>;
+    var stack: array<u32, bvhDepth + 1>;
     var stackIdx = 0u;
 
     for (var i = 0u; i < u32(store.objectCount); i++) {
