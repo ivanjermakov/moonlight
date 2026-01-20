@@ -273,7 +273,7 @@ const update = async () => {
     info.innerText = [
         sceneName,
         ['dt  ', dt.toFixed(1).padStart(6, ' '), dtps.toFixed(1).padStart(5, ' ')].join(' '),
-        ['fps ', (1000 / dt).toFixed().padStart(6, ' '), (1000 / dtps).toFixed().padStart(5, ' ')].join(' '),
+        ['fps ', (1000 / dt).toFixed(1).padStart(6, ' '), (1000 / dtps).toFixed(1).padStart(5, ' ')].join(' '),
         ['smpl', (frame * samplesPerPass).toFixed().padStart(6, ' ')].join(' '),
         ['et  ', `${((start - firstFrameStart) / 1000).toFixed().padStart(5, ' ')}s`].join(' ')
     ].join('\n')
