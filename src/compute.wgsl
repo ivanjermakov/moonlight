@@ -82,6 +82,7 @@ const samplesPerPass = ${samplesPerPass};
 
 var<private> testCountTriangle = 0.;
 var<private> testCountAabb = 0.;
+var<private> bounceCount = 0.;
 
 @group(0) @binding(0) var acc: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
@@ -101,8 +102,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     for (var i = 0u; i < samplesPerPass; i++) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
-    color.a = testCountTriangle / 1e2;
+    // color.a = testCountTriangle / 1e2;
     // color.a = (testCountAabb / 2e2);
+    color.a = (bounceCount / maxBounces);
     color /= samplesPerPass;
 
     if uniforms.frame == 0 {
@@ -204,6 +206,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
         if bounce == maxBounces {
             emission = ambientEmission;
         }
+        bounceCount += 1.;
     }
 
     return color * emission;
