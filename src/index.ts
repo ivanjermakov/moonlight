@@ -93,6 +93,7 @@ export type SceneName =
     | 'additive-light'
     | 'highlight-desaturation'
     | 'refraction'
+    | 'refraction-foreground'
 export const sceneName: SceneName = 'cornell-box'
 
 let device: GPUDevice
