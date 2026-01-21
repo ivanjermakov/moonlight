@@ -49,17 +49,21 @@ export const buildBvh = (object: SceneObject): BvhNode => {
     return splitBvh(root, 0)
 }
 
+/**
+ * For further optimization, consider binning https://jacco.ompf2.com/2022/04/21/how-to-build-a-bvh-part-3-quick-builds/
+ */
 export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
     if (node.type === 'node') throw Error()
     let best: SplitResult | undefined = undefined
+    const vertCount = node.object.indexCount / 3
 
     for (const splitAxis of axes) {
         const axisLength = node.box.getSize(new Vector3())[splitAxis]
         const axisStart = node.box.min[splitAxis]
-        // check more slices per vertex when BVH node's vertex count is low
+        // check less slices per vertex when BVH node's vertex count is high
         // https://www.desmos.com/calculator/5lwf9tbwym
-        const accuracy = bvhSplitAccuracy / (node.object.indexCount + bvhSplitAccuracy)
-        const cuts = Math.ceil(node.object.indexCount * accuracy)
+        const accuracy = bvhSplitAccuracy / (vertCount + bvhSplitAccuracy)
+        const cuts = Math.ceil(vertCount * accuracy)
         for (let cut = 0; cut < cuts; cut++) {
             const splitPoint = axisStart + axisLength * (cut / cuts)
             const left: number[] = []
@@ -183,4 +187,11 @@ export const traverseBfs = (root: BvhNode): BvhNode[] => {
         }
     }
     return result
+}
+
+export const longestAxis = (v: Vector3): Axis => {
+    const longestSize = Math.max(v.x, v.y, v.z)
+    if (v.x === longestSize) return 'x'
+    if (v.y === longestSize) return 'y'
+    return 'z'
 }

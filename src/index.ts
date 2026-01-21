@@ -83,8 +83,12 @@ export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
 export const bvhNodeSize = 8
 export const bvhDepth = 32
-export const bvhNodeArraySize = objectsArraySize * 256
-export const bvhSplitAccuracy = 128
+export const bvhNodeArraySize = objectsArraySize * 512
+/*
+ * Maximum number of BVH cuts per axis to consider when splitting
+ * Weighed by vertex count
+ */
+export const bvhSplitAccuracy = 4
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
 export type SceneName =
     | 'cornell-box'
@@ -170,7 +174,9 @@ const main = async (): Promise<void> => {
         }
     })
 
+    const start = performance.now()
     await initScene()
+    console.debug(`init scene in ${(performance.now() - start).toFixed()}ms`)
     await initCompute()
     await initRender()
 
@@ -204,6 +210,7 @@ const update = async () => {
         firstFrameStart = frameStart
     }
 
+    // TODO: don't advance time on unfocued window and vsync run mode
     const elapsed = start - firstFrameStart
     const timeOut = timeLimit !== undefined && elapsed >= timeLimit
     if (timeOut && !capture) return
@@ -455,13 +462,16 @@ const initCompute = async () => {
             }
         }
 
-        // const leafTris = bvhNodes.filter(l => l.type === 'leaf').map(l => l.triangles.length).toSorted((a, b) => a - b)
-        // console.debug('bvh', o.mesh.name, bvhNodes, {
-        //     min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
-        //     max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
-        //     mean: leafTris[Math.floor(leafTris.length / 2)],
-        //     avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
-        // })
+        const leafTris = bvhNodes
+            .filter(l => l.type === 'leaf')
+            .map(l => l.triangles.length)
+            .toSorted((a, b) => a - b)
+        console.debug('bvh', o.mesh.name, bvhNodes, {
+            min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+            max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
+            mean: leafTris[Math.floor(leafTris.length / 2)],
+            avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
+        })
 
         objectsArray.push(
             ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
