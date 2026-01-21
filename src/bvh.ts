@@ -54,12 +54,14 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
     let best: SplitResult | undefined = undefined
 
     for (const splitAxis of axes) {
-        // intrinsic to not brute force through every possible bvh slice
+        const axisLength = node.box.getSize(new Vector3())[splitAxis]
+        const axisStart = node.box.min[splitAxis]
+        // check more slices per vertex when BVH node's vertex count is low
         // https://www.desmos.com/calculator/5lwf9tbwym
         const accuracy = bvhSplitAccuracy / (node.object.indexCount + bvhSplitAccuracy)
-        for (let vi = 0; vi < node.object.indexCount; vi += 1 / accuracy) {
-            const vertIdx = node.object.index[3 * Math.floor(vi)]
-            const splitPoint = node.object.position[3 * vertIdx + axisIndex[splitAxis]]
+        const cuts = Math.ceil(node.object.indexCount * accuracy)
+        for (let cut = 0; cut < cuts; cut++) {
+            const splitPoint = axisStart + axisLength * (cut / cuts)
             const left: number[] = []
             const right: number[] = []
             for (const ti of node.triangles) {
@@ -142,8 +144,9 @@ export const bvhCost = (box: Box3, triangles: number) => {
 
 export const makeBox = (object: SceneObject, triangles: number[]): Box3 => {
     if (triangles.length === 0) return new Box3()
-    const min = object.triangles[triangles[0]].a.clone()
-    const max = object.triangles[triangles[0]].a.clone()
+    const t0 = object.triangles[triangles[0]]
+    const min = t0.a.clone()
+    const max = t0.a.clone()
     for (const t of triangles) {
         const triangle = object.triangles[t]
         min.x = Math.min(min.x, triangle.a.x, triangle.b.x, triangle.c.x)
