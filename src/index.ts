@@ -77,14 +77,14 @@ export const debugOverlay = false
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-export const objectsArraySize = 128
-export const meshArraySize = objectsArraySize * 512
-export const materialsArraySize = 32
+export const objectsArraySize = 1024
+export const meshArraySize = objectsArraySize * 256
+export const materialsArraySize = 1024
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
 export const bvhNodeSize = 8
 export const bvhDepth = 32
-export const bvhNodeArraySize = objectsArraySize * 512
+export const bvhNodeArraySize = objectsArraySize * 256
 /*
  * Maximum number of BVH cuts per axis to consider when splitting
  * Weighed by vertex count
@@ -98,6 +98,7 @@ export type SceneName =
     | 'glass'
     | 'dof'
     | 'additive-light'
+    | 'primaries-sweep'
     | 'highlight-desaturation'
     | 'refraction'
     | 'refraction-foreground'
