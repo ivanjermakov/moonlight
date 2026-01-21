@@ -63,11 +63,11 @@ let camera!: CameraConfig
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
 export const renderHeight = 1440 as number | 'dynamic'
-export const maxBounces = 12
+export const maxBounces = 16
 export const maxBouncesDiffuse = 4
 export const maxBouncesSpecular = 4
 export const maxBouncesTransmission = 12
-export const samplesPerPass = 1
+export const samplesPerPass = 4
 export const timeLimit: number | undefined = 120e3
 export const debugOverlay = false
 
@@ -84,7 +84,15 @@ export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 256
 export const bvhSplitAccuracy = 128
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
-export type SceneName = 'cornell-box' | 'rough-metallic' | 'caustics' | 'glass' | 'dof' | 'additive-light' | 'highlight-desaturation'
+export type SceneName =
+    | 'cornell-box'
+    | 'rough-metallic'
+    | 'caustics'
+    | 'glass'
+    | 'dof'
+    | 'additive-light'
+    | 'highlight-desaturation'
+    | 'refraction'
 export const sceneName: SceneName = 'cornell-box'
 
 let device: GPUDevice
