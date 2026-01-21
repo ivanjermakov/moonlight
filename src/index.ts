@@ -13,6 +13,7 @@ import {
     Triangle
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
+import Color4 from 'three/src/renderers/common/Color4.js'
 import { BvhNode, buildBvh, traverseBfs, triangleByIndex } from './bvh'
 import bvhWgsl from './bvh.wgsl?raw'
 import commonsWgsl from './commons.wgsl?raw'
@@ -41,7 +42,7 @@ export type SceneObject = {
 export type SceneMaterial = {
     material: MeshStandardMaterial
     baseColor: Color
-    emissive: Color
+    emissive: Color4
     metallic: number
     roughness: number
     ior: number
@@ -328,7 +329,10 @@ const initScene = async () => {
                 const sceneMaterial: SceneMaterial = {
                     material,
                     baseColor: material.color,
-                    emissive: material.emissive,
+                    emissive:
+                        material.emissive.r + material.emissive.g + material.emissive.b > 0
+                            ? new Color4(material.emissive)
+                            : new Color4(0, 0, 0, 0),
                     metallic: material.metalness,
                     roughness: material.roughness,
                     ior: 1,
@@ -499,7 +503,7 @@ const initCompute = async () => {
             ...m.baseColor.toArray(),
             1,
             ...m.emissive,
-            m.material.emissiveIntensity,
+            m.emissive.a,
             m.metallic,
             m.roughness,
             m.ior,

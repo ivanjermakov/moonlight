@@ -139,7 +139,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let object = store.objects[rayCast.object];
             let material = store.materials[u32(object.material)];
 
-            if material.emissiveColor.a > 1 {
+            if material.emissiveColor.a > 0 {
                 emission += material.emissiveColor.a;
                 color *= material.emissiveColor.rgb;
                 break;
