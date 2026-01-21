@@ -9,10 +9,11 @@ import {
     MeshPhysicalMaterial,
     MeshStandardMaterial,
     PerspectiveCamera,
-    Quaternion
+    Quaternion,
+    Triangle
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { BvhNode, buildBvh, traverseBfs } from './bvh'
+import { BvhNode, buildBvh, traverseBfs, triangleByIndex } from './bvh'
 import bvhWgsl from './bvh.wgsl?raw'
 import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
@@ -30,6 +31,7 @@ export type SceneObject = {
     uv: Float32Array
     indexOffset: number
     vertexOffset: number
+    triangles: Triangle[]
     matrixWorld: Matrix4
     material: number
     boundingBox: Box3
@@ -353,14 +355,16 @@ const initScene = async () => {
                 uv: uv.array as Float32Array,
                 indexOffset,
                 vertexOffset,
+                triangles: [],
                 matrixWorld: o.matrixWorld,
                 material: materialIndex,
                 boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
                 bvh: undefined as any
             }
-            object.bvh = buildBvh(object)
             indexOffset += object.indexCount
             vertexOffset += object.positionCount
+            object.triangles = new Array(geometry.index.count / 3).fill(0).map((_, i) => triangleByIndex(object, i))
+            object.bvh = buildBvh(object)
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
@@ -444,10 +448,10 @@ const initCompute = async () => {
                 ...bvhNode.box.min.toArray(),
                 bvhNode.type === 'leaf' ? bvhTriangleArray.length : bvhNodeOffset + bvhNodes.indexOf(bvhNode.left),
                 ...bvhNode.box.max.toArray(),
-                bvhNode.type === 'leaf' ? bvhNode.triangleIdxs.length : 0
+                bvhNode.type === 'leaf' ? bvhNode.triangles.length : 0
             )
             if (bvhNode.type === 'leaf') {
-                bvhTriangleArray.push(...bvhNode.triangleIdxs)
+                bvhTriangleArray.push(...bvhNode.triangles)
             }
         }
 

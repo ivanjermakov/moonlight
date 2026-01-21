@@ -2,6 +2,11 @@ import { Box3, Triangle, Vector3 } from 'three'
 import { SceneObject, bvhDepth, bvhSplitAccuracy } from '.'
 
 export const axes = ['x', 'y', 'z'] as const
+export const axisIndex = {
+    x: 0,
+    y: 1,
+    z: 2
+}
 export type Axis = (typeof axes)[number]
 
 export type BvhNode = {
@@ -15,19 +20,16 @@ export type BvhNode = {
       }
     | {
           type: 'leaf'
-          triangleIdxs: number[]
-          triangles: Triangle[]
+          triangles: number[]
       }
 )
 
 export type SplitResult = {
     splitAxis: Axis
     splitPoint: number
-    left: Triangle[]
-    leftIdxs: number[]
+    left: number[]
     leftBox: Box3
-    right: Triangle[]
-    rightIdxs: number[]
+    right: number[]
     rightBox: Box3
     cost: number
 }
@@ -37,13 +39,11 @@ export const buildBvh = (object: SceneObject): BvhNode => {
     for (let fi = 0; fi < object.indexCount / 3; fi++) {
         triangleIdxs.push(fi)
     }
-    const triangles = triangleIdxs.map(i => triangleByIndex(object, i))
     const root: BvhNode = {
         object,
-        box: makeBox(triangles),
+        box: makeBox(object, triangleIdxs),
         type: 'leaf',
-        triangleIdxs,
-        triangles
+        triangles: triangleIdxs
     }
 
     return splitBvh(root, 0)
@@ -54,48 +54,34 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
     let best: SplitResult | undefined = undefined
 
     for (const splitAxis of axes) {
-        let axisIndex: number
-        // biome-ignore format:
-        switch (splitAxis) {
-                case 'x': axisIndex = 0; break;
-                case 'y': axisIndex = 1; break;
-                case 'z': axisIndex = 2; break;
-            }
         // intrinsic to not brute force through every possible bvh slice
         // https://www.desmos.com/calculator/5lwf9tbwym
         const accuracy = bvhSplitAccuracy / (node.object.indexCount + bvhSplitAccuracy)
         for (let vi = 0; vi < node.object.indexCount; vi += 1 / accuracy) {
             const vertIdx = node.object.index[3 * Math.floor(vi)]
-            const splitPoint = node.object.position[3 * vertIdx + axisIndex]
-            const left: Triangle[] = []
-            const leftIdxs: number[] = []
-            const right: Triangle[] = []
-            const rightIdxs: number[] = []
-            for (let i = 0; i < node.triangles.length; i++) {
-                const ti = node.triangleIdxs[i]
-                const t = node.triangles[i]
+            const splitPoint = node.object.position[3 * vertIdx + axisIndex[splitAxis]]
+            const left: number[] = []
+            const right: number[] = []
+            for (const ti of node.triangles) {
+                const t = node.object.triangles[ti]
                 if (t.a[splitAxis] >= splitPoint || t.b[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint) {
-                    left.push(t)
-                    leftIdxs.push(ti)
+                    left.push(ti)
                 } else {
-                    right.push(t)
-                    rightIdxs.push(ti)
+                    right.push(ti)
                 }
             }
             if (left.length === 0 || right.length === 0) continue
 
-            const leftBox = makeBox(left)
-            const rightBox = makeBox(right)
+            const leftBox = makeBox(node.object, left)
+            const rightBox = makeBox(node.object, right)
             const cost = bvhCost(leftBox, left.length) + bvhCost(rightBox, right.length)
             if (best === undefined || cost < best.cost) {
                 best = {
                     splitAxis,
                     splitPoint,
-                    left,
-                    leftIdxs,
+                    left: left,
                     leftBox,
-                    right,
-                    rightIdxs,
+                    right: right,
                     rightBox,
                     cost
                 }
@@ -130,7 +116,6 @@ export const splitBvh = (node: BvhNode, depth: number): BvhNode => {
             object,
             box: split.leftBox,
             type: 'leaf',
-            triangleIdxs: split.leftIdxs,
             triangles: split.left
         }
         nodeNew.left = splitBvh(left, depth + 1)
@@ -140,7 +125,6 @@ export const splitBvh = (node: BvhNode, depth: number): BvhNode => {
             object,
             box: split.rightBox,
             type: 'leaf',
-            triangleIdxs: split.rightIdxs,
             triangles: split.right
         }
         nodeNew.right = splitBvh(right, depth + 1)
@@ -156,11 +140,12 @@ export const bvhCost = (box: Box3, triangles: number) => {
     return size.x * size.y * size.z * triangles
 }
 
-export const makeBox = (triangles: Triangle[]): Box3 => {
+export const makeBox = (object: SceneObject, triangles: number[]): Box3 => {
     if (triangles.length === 0) return new Box3()
-    const min = triangles[0].a.clone()
-    const max = triangles[0].a.clone()
-    for (const triangle of triangles) {
+    const min = object.triangles[triangles[0]].a.clone()
+    const max = object.triangles[triangles[0]].a.clone()
+    for (const t of triangles) {
+        const triangle = object.triangles[t]
         min.x = Math.min(min.x, triangle.a.x, triangle.b.x, triangle.c.x)
         min.y = Math.min(min.y, triangle.a.y, triangle.b.y, triangle.c.y)
         min.z = Math.min(min.z, triangle.a.z, triangle.b.z, triangle.c.z)
