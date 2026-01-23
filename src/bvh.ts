@@ -10,7 +10,6 @@ export const axisIndex = {
 export type Axis = (typeof axes)[number]
 
 export type BvhNode = {
-    object: SceneObject
     box: Box3
 } & (
     | {
@@ -20,7 +19,7 @@ export type BvhNode = {
       }
     | {
           type: 'leaf'
-          triangles: number[]
+          index: number[]
       }
 )
 
@@ -34,28 +33,34 @@ export type SplitResult = {
     cost: number
 }
 
-export const buildBvh = (object: SceneObject): BvhNode => {
+export const buildBvhTris = (object: SceneObject): BvhNode => {
+    const indexer = (i: number) => {
+        // TODO: precompute
+        const t = object.triangles[i]
+        const points = [t.a, t.b, t.c]
+        return new Box3().setFromPoints(points)
+    }
     const triangleIdxs = []
     for (let fi = 0; fi < object.indexCount / 3; fi++) {
         triangleIdxs.push(fi)
     }
     const root: BvhNode = {
-        object,
-        box: makeBox(object, triangleIdxs),
+        box: makeBox(indexer, triangleIdxs),
         type: 'leaf',
-        triangles: triangleIdxs
+        index: triangleIdxs
     }
 
-    return splitBvh(root, 0)
+    return splitBvh(root, indexer, 0)
+}
 }
 
 /**
  * For further optimization, consider binning https://jacco.ompf2.com/2022/04/21/how-to-build-a-bvh-part-3-quick-builds/
  */
-export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
+export const optimalSplit = (node: BvhNode, indexer: (i: number) => Box3): SplitResult | undefined => {
     if (node.type === 'node') throw Error()
     let best: SplitResult | undefined = undefined
-    const vertCount = node.object.indexCount / 3
+    const vertCount = node.index.length
 
     for (const splitAxis of axes) {
         const axisLength = node.box.getSize(new Vector3())[splitAxis]
@@ -68,9 +73,8 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
             const splitPoint = axisStart + axisLength * (cut / cuts)
             const left: number[] = []
             const right: number[] = []
-            for (const ti of node.triangles) {
-                const t = node.object.triangles[ti]
-                if (t.a[splitAxis] >= splitPoint || t.b[splitAxis] >= splitPoint || t.c[splitAxis] >= splitPoint) {
+            for (const ti of node.index) {
+                if (indexer(ti).min[splitAxis] < splitPoint) {
                     left.push(ti)
                 } else {
                     right.push(ti)
@@ -78,8 +82,8 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
             }
             if (left.length === 0 || right.length === 0) continue
 
-            const leftBox = makeBox(node.object, left)
-            const rightBox = makeBox(node.object, right)
+            const leftBox = makeBox(indexer, left)
+            const rightBox = makeBox(indexer, right)
             const cost = bvhCost(leftBox, left.length) + bvhCost(rightBox, right.length)
             if (best === undefined || cost < best.cost) {
                 best = {
@@ -98,69 +102,59 @@ export const optimalSplit = (node: BvhNode): SplitResult | undefined => {
     return best
 }
 
-export const splitBvh = (node: BvhNode, depth: number): BvhNode => {
+export const splitBvh = (node: BvhNode, indexer: (i: number) => Box3, depth: number): BvhNode => {
     if (depth >= bvhDepth) {
         console.warn('hit the bvh depth limit', node, depth)
         return node
     }
     if (node.type === 'node') throw Error()
-    const object = node.object
 
     const nodeNew: BvhNode = {
         type: 'node',
-        object,
         box: node.box,
         left: undefined as any,
         right: undefined as any
     }
 
-    const split = optimalSplit(node)
+    const split = optimalSplit(node, indexer)
     if (!split) return node
 
     if (split.left.length > 0) {
         const left: BvhNode = {
-            object,
             box: split.leftBox,
             type: 'leaf',
-            triangles: split.left
+            index: split.left
         }
-        nodeNew.left = splitBvh(left, depth + 1)
+        nodeNew.left = splitBvh(left, indexer, depth + 1)
     }
     if (split.right.length > 0) {
         const right: BvhNode = {
-            object,
             box: split.rightBox,
             type: 'leaf',
-            triangles: split.right
+            index: split.right
         }
-        nodeNew.right = splitBvh(right, depth + 1)
+        nodeNew.right = splitBvh(right, indexer, depth + 1)
     }
-    if (!nodeNew.left || node.triangles.length === split.right.length) return nodeNew.right!
-    if (!nodeNew.right || node.triangles.length === split.left.length) return nodeNew.left!
+    if (!nodeNew.left || node.index.length === split.right.length) return nodeNew.right!
+    if (!nodeNew.right || node.index.length === split.left.length) return nodeNew.left!
 
     return nodeNew
 }
 
 export const bvhCost = (box: Box3, triangles: number) => {
     const size = box.getSize(new Vector3())
-    return size.x * size.y * size.z * triangles
+    const halfSurfaceArea = size.x * size.y + size.x * size.z + size.y * size.z
+    return halfSurfaceArea * triangles
 }
 
-export const makeBox = (object: SceneObject, triangles: number[]): Box3 => {
-    if (triangles.length === 0) return new Box3()
-    const t0 = object.triangles[triangles[0]]
-    const min = t0.a.clone()
-    const max = t0.a.clone()
-    for (const t of triangles) {
-        const triangle = object.triangles[t]
-        min.x = Math.min(min.x, triangle.a.x, triangle.b.x, triangle.c.x)
-        min.y = Math.min(min.y, triangle.a.y, triangle.b.y, triangle.c.y)
-        min.z = Math.min(min.z, triangle.a.z, triangle.b.z, triangle.c.z)
-        max.x = Math.max(max.x, triangle.a.x, triangle.b.x, triangle.c.x)
-        max.y = Math.max(max.y, triangle.a.y, triangle.b.y, triangle.c.y)
-        max.z = Math.max(max.z, triangle.a.z, triangle.b.z, triangle.c.z)
+export const makeBox = (indexer: (i: number) => Box3, index: number[]): Box3 => {
+    if (index.length === 0) return new Box3()
+    const t0 = indexer(index[0])
+    const box = t0.clone()
+    for (const t of index) {
+        box.union(indexer(t))
     }
-    return new Box3(min, max)
+    return box
 }
 
 export const triangleByIndex = (object: SceneObject, index: number): Triangle => {

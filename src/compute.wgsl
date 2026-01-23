@@ -10,7 +10,7 @@ struct Storage {
     objects: array<SceneObject, ${objectsArraySize}>,
     materials: array<SceneMaterial, ${materialsArraySize}>,
     bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
-    // array of object-space triangle indices
+    // array of object-space triangle indices, indexed by bvhNode
     bvhTriangle: array<f32, ${meshArraySize}>,
     camera: Camera,
     objectCount: f32,

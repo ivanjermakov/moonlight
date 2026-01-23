@@ -1,15 +1,10 @@
+// aabbMin and aabbMax are split, otherwise nested struct makes struct 4 floats bigger due to alignment
 struct BvhNode {
     aabbMin: vec3f,
-    // if type leaf:
-    //   into store.bvhTriangle
-    // if type node:
-    //   into store.bvhNode
-    //   store.bvhNode[leafOffset] is node.left
-    //   store.bvhNode[leafOffset + 1] is node.right
-    //   only valid if triangleCount == 0
-    triangleOrLeafOffset: f32,
+    // start index into array of leaf items if type leaf, node index if type node
+    indexOrLeafOffset: f32,
     aabbMax: vec3f,
-    triangleCount: f32,
+    count: f32,
 }
 
 const bvhDepth = ${bvhDepth};
@@ -36,11 +31,11 @@ fn castRay(ray: Ray) -> RayCast {
             stackIdx--;
             let bvhNodeIdx = stack[stackIdx];
             let bvhNode = store.bvhNode[bvhNodeIdx];
-            if bvhNode.triangleCount > 0 {
+            if bvhNode.count > 0 {
                 let indexOffset = u32(object.indexOffset);
                 let vertexOffset = u32(object.vertexOffset);
-                let triangleOffset = u32(bvhNode.triangleOrLeafOffset);
-                for (var bvhTriangleIdx = 0u; bvhTriangleIdx < u32(bvhNode.triangleCount); bvhTriangleIdx++) {
+                let triangleOffset = u32(bvhNode.indexOrLeafOffset);
+                for (var bvhTriangleIdx = 0u; bvhTriangleIdx < u32(bvhNode.count); bvhTriangleIdx++) {
                     let triangleIdx = u32(store.bvhTriangle[triangleOffset + bvhTriangleIdx]);
                     var triangle: array<vec3f, 3>;
                     for (var v = 0u; v < 3; v++) {
@@ -87,11 +82,11 @@ fn castRay(ray: Ray) -> RayCast {
                     }
                 }
             } else {
-                let idxLeft = u32(bvhNode.triangleOrLeafOffset);
+                let idxLeft = u32(bvhNode.indexOrLeafOffset);
                 let left = store.bvhNode[idxLeft];
                 let aabbLeft = Aabb(left.aabbMin, left.aabbMax);
                 let distLeft = intersectAabb(ray, aabbLeft);
-                let idxRight = u32(bvhNode.triangleOrLeafOffset + 1);
+                let idxRight = u32(bvhNode.indexOrLeafOffset + 1);
                 let right = store.bvhNode[idxRight];
                 let aabbRight = Aabb(right.aabbMin, right.aabbMax);
                 let distRight = intersectAabb(ray, aabbRight);
