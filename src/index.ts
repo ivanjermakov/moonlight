@@ -323,7 +323,6 @@ const initScene = async () => {
             const geometry = o.geometry
             const position = geometry.attributes.position as BufferAttribute
             const normal = geometry.attributes.normal as BufferAttribute
-            const uv = geometry.attributes.uv as BufferAttribute
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
@@ -353,7 +352,10 @@ const initScene = async () => {
                 console.warn('no bounding box', o)
                 return
             }
-            if (!(position.count === normal.count && position.count === uv.count)) {
+            if (!geometry.attributes.uv) {
+                geometry.attributes.uv = new BufferAttribute(new Float32Array(position.count * 2), 2)
+            }
+            if (!(position.count === normal.count && position.count === geometry.attributes.uv.count)) {
                 console.warn('inconsistent buffer size', o)
                 return
             }
@@ -364,7 +366,7 @@ const initScene = async () => {
                 position: transformPointArray(position.array as Float32Array, o.matrixWorld),
                 positionCount: position.count,
                 normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
-                uv: uv.array as Float32Array,
+                uv: geometry.attributes.uv.array as Float32Array,
                 indexOffset,
                 vertexOffset,
                 triangles: [],
@@ -471,7 +473,7 @@ const initCompute = async () => {
             .filter(l => l.type === 'leaf')
             .map(l => l.triangles.length)
             .toSorted((a, b) => a - b)
-        console.debug('bvh', o.mesh.name, bvhNodes, {
+        console.debug('bvh', o.mesh.name, {
             min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
             max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
             mean: leafTris[Math.floor(leafTris.length / 2)],
