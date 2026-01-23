@@ -49,9 +49,20 @@ export const buildBvhTris = (object: SceneObject): BvhNode => {
         type: 'leaf',
         index: triangleIdxs
     }
-
     return splitBvh(root, indexer, 0)
 }
+
+export const buildBvhObjects = (objects: SceneObject[]): BvhNode => {
+    const indexer = (i: number) => objects[i].boundingBox
+    const objectIdxs = Array(objects.length)
+        .fill(0)
+        .map((_, i) => i)
+    const root: BvhNode = {
+        box: makeBox(indexer, objectIdxs),
+        type: 'leaf',
+        index: objectIdxs
+    }
+    return splitBvh(root, indexer, 0)
 }
 
 /**

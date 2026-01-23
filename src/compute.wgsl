@@ -12,6 +12,9 @@ struct Storage {
     bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     // array of object-space triangle indices, indexed by bvhNode
     bvhTriangle: array<f32, ${meshArraySize}>,
+    sceneBvhNode: array<BvhNode, ${objectsArraySize}>,
+    // array of object indices, indexed by sceneBvhNodes
+    sceneBvhObject: array<f32, ${objectsArraySize}>,
     camera: Camera,
     objectCount: f32,
     p1: f32,

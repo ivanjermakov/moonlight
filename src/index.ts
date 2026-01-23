@@ -14,7 +14,7 @@ import {
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import Color4 from 'three/src/renderers/common/Color4.js'
-import { BvhNode, buildBvh, traverseBfs, triangleByIndex } from './bvh'
+import { BvhNode, buildBvhObjects, buildBvhTris, traverseBfs, triangleByIndex } from './bvh'
 import bvhWgsl from './bvh.wgsl?raw'
 import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
@@ -62,6 +62,7 @@ export type CameraConfig = {
 const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
 let camera!: CameraConfig
+let sceneBvh!: BvhNode
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
@@ -378,7 +379,7 @@ const initScene = async () => {
             indexOffset += object.indexCount
             vertexOffset += object.positionCount
             object.triangles = new Array(geometry.index.count / 3).fill(0).map((_, i) => triangleByIndex(object, i))
-            object.bvh = buildBvh(object)
+            object.bvh = buildBvhTris(object)
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
@@ -393,10 +394,13 @@ const initScene = async () => {
             }
         }
     })
+    sceneBvh = buildBvhObjects(objects)
+
     console.debug(objects)
     console.debug(materials)
     console.debug(camera)
     console.debug(objects.map(o => o.bvh))
+    console.debug(sceneBvh)
 }
 
 const initCompute = async () => {
@@ -457,28 +461,28 @@ const initCompute = async () => {
         const bvhNodeOffset = bvhNodeArray.length / bvhNodeSize
         const bvhNodes = traverseBfs(o.bvh)
         for (let i = 0; i < bvhNodes.length; i++) {
-            const bvhNode = bvhNodes[i]
+            const node = bvhNodes[i]
             bvhNodeArray.push(
-                ...bvhNode.box.min.toArray(),
-                bvhNode.type === 'leaf' ? bvhTriangleArray.length : bvhNodeOffset + bvhNodes.indexOf(bvhNode.left),
-                ...bvhNode.box.max.toArray(),
-                bvhNode.type === 'leaf' ? bvhNode.triangles.length : 0
+                ...node.box.min.toArray(),
+                node.type === 'leaf' ? bvhTriangleArray.length : bvhNodeOffset + bvhNodes.indexOf(node.left),
+                ...node.box.max.toArray(),
+                node.type === 'leaf' ? node.index.length : 0
             )
-            if (bvhNode.type === 'leaf') {
-                bvhTriangleArray.push(...bvhNode.triangles)
+            if (node.type === 'leaf') {
+                bvhTriangleArray.push(...node.index)
             }
         }
 
-        const leafTris = bvhNodes
-            .filter(l => l.type === 'leaf')
-            .map(l => l.triangles.length)
-            .toSorted((a, b) => a - b)
-        console.debug('bvh', o.mesh.name, {
-            min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
-            max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
-            mean: leafTris[Math.floor(leafTris.length / 2)],
-            avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
-        })
+        // const leafTris = bvhNodes
+        //     .filter(l => l.type === 'leaf')
+        //     .map(l => l.index.length)
+        //     .toSorted((a, b) => a - b)
+        // console.debug('bvh', o.mesh.name, {
+        //     min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+        //     max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
+        //     mean: leafTris[Math.floor(leafTris.length / 2)],
+        //     avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
+        // })
 
         objectsArray.push(
             ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
@@ -499,6 +503,37 @@ const initCompute = async () => {
     bvhNodeTypedArray.set(bvhNodeArray)
     const bvhTriangleTypedArray = new Float32Array(meshArraySize)
     bvhTriangleTypedArray.set(bvhTriangleArray)
+
+    const sceneBvhNodeArray: number[] = []
+    const sceneBvhObjectArray: number[] = []
+    const sceneBvhNodes = traverseBfs(sceneBvh)
+    for (let i = 0; i < sceneBvhNodes.length; i++) {
+        const node = sceneBvhNodes[i]
+        sceneBvhNodeArray.push(
+            ...node.box.min.toArray(),
+            node.type === 'leaf' ? sceneBvhObjectArray.length : sceneBvhNodes.indexOf(node.left),
+            ...node.box.max.toArray(),
+            node.type === 'leaf' ? node.index.length : 0
+        )
+        if (node.type === 'leaf') {
+            sceneBvhObjectArray.push(...node.index)
+        }
+    }
+    const sceneBvhNodeTypedArray = new Float32Array(bvhNodeSize * objectsArraySize)
+    sceneBvhNodeTypedArray.set(sceneBvhNodeArray)
+    const sceneBvhObjectTypedArray = new Float32Array(objectsArraySize)
+    sceneBvhObjectTypedArray.set(sceneBvhObjectArray)
+
+    const leafObjects = sceneBvhNodes
+        .filter(l => l.type === 'leaf')
+        .map(l => l.index.length)
+        .toSorted((a, b) => a - b)
+    console.debug('scene bvh', {
+        min: leafObjects.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+        max: leafObjects.reduce((a, b) => (b > a ? b : a), 0),
+        mean: leafObjects[Math.floor(leafObjects.length / 2)],
+        avg: leafObjects.reduce((a, b) => a + b, 0) / leafObjects.length
+    })
 
     const materialsArray: number[] = []
     for (const m of materials) {
@@ -524,6 +559,7 @@ const initCompute = async () => {
         camera.focus,
         camera.fstop
     ]
+
     // TODO: optimize, too much copying
     const storageBufferArray = [
         ...indexArray,
@@ -534,12 +570,15 @@ const initCompute = async () => {
         ...materialsTypedArray,
         ...bvhNodeTypedArray,
         ...bvhTriangleTypedArray,
+        ...sceneBvhNodeTypedArray,
+        ...sceneBvhObjectTypedArray,
         ...cameraArray,
         objects.length,
         0,
         0,
         0
     ]
+
     const storageBuffer = device.createBuffer({
         size: storageBufferArray.length * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
