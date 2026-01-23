@@ -34,16 +34,11 @@ export type SplitResult = {
 }
 
 export const buildBvhTris = (object: SceneObject): BvhNode => {
-    const indexer = (i: number) => {
-        // TODO: precompute
-        const t = object.triangles[i]
-        const points = [t.a, t.b, t.c]
-        return new Box3().setFromPoints(points)
-    }
-    const triangleIdxs = []
-    for (let fi = 0; fi < object.indexCount / 3; fi++) {
-        triangleIdxs.push(fi)
-    }
+    const boxes = object.triangles.map(t => new Box3().setFromPoints([t.a, t.b, t.c]))
+    const indexer = (i: number) => boxes[i]
+    const triangleIdxs = Array(object.indexCount / 3)
+        .fill(0)
+        .map((_, i) => i)
     const root: BvhNode = {
         box: makeBox(indexer, triangleIdxs),
         type: 'leaf',
