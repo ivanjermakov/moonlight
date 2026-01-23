@@ -332,7 +332,7 @@ const initScene = async () => {
                     baseColor: material.color,
                     emissive:
                         material.emissive.r + material.emissive.g + material.emissive.b > 0
-                            ? new Color4(material.emissive)
+                            ? new Color4(...material.emissive, material.emissiveIntensity)
                             : new Color4(0, 0, 0, 0),
                     metallic: material.metalness,
                     roughness: material.roughness,
