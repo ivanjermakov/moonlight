@@ -109,6 +109,14 @@ export const optimalSplit = (
         }
     }
 
+    // TODO: configurable
+    if (!best && node.index.length > 10) {
+        if (splitAccuracy > 10000) {
+            console.warn('no split found', node)
+            return undefined
+        }
+        best = optimalSplit(node, indexer, 20 * splitAccuracy)
+    }
     return best
 }
 
