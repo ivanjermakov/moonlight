@@ -3,13 +3,13 @@ ${commons}
 ${bvh}
 
 struct Storage {
-    index: array<f32, ${meshArraySize}>,
-    position: array<f32, ${meshArraySize}>,
-    normal: array<f32, ${meshArraySize}>,
-    uv: array<f32, ${meshArraySize}>,
+    index: array<f32, ${objectsArraySize} * ${indexSizePerMesh}>,
+    position: array<f32, ${objectsArraySize} * 3 * ${vertexSizePerMesh}>,
+    normal: array<f32, ${objectsArraySize} * 3 * ${vertexSizePerMesh}>,
+    uv: array<f32, ${objectsArraySize} * 2 * ${vertexSizePerMesh}>,
     bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     // array of object-space triangle indices, indexed by bvhNode
-    bvhTriangle: array<f32, ${meshArraySize}>,
+    bvhTriangle: array<f32, ${objectsArraySize} * ${indexSizePerMesh}>,
     objects: array<SceneObject, ${objectsArraySize}>,
     materials: array<SceneMaterial, ${materialsArraySize}>,
     sceneBvhNode: array<BvhNode, ${sceneBvhNodeArraySize}>,

@@ -101,8 +101,8 @@ export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 
 export const objectsArraySize = 1024
-export const indexSize = 2048
-export const meshArraySize = objectsArraySize * indexSize
+export const indexSizePerMesh = 1024
+export const vertexSizePerMesh = 2048
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
@@ -114,17 +114,17 @@ export const sceneBvhNodeArraySize = 2 * objectsArraySize
 
 export const storageSize =
     // index
-    meshArraySize +
+    objectsArraySize * indexSizePerMesh +
     // position
-    meshArraySize +
+    objectsArraySize * 3 * vertexSizePerMesh +
     // normal
-    meshArraySize +
+    objectsArraySize * 3 * vertexSizePerMesh +
     // uv
-    meshArraySize +
+    objectsArraySize * 2 * vertexSizePerMesh +
     // bvhNode
     bvhNodeSize * bvhNodeArraySize +
     // bvhTriangle
-    meshArraySize +
+    objectsArraySize * indexSizePerMesh +
     // object
     sceneObjectSize * objectsArraySize +
     // material
@@ -444,7 +444,8 @@ const initCompute = async () => {
         code: applyTemplate(computeWgsl, {
             commons,
             bvh,
-            meshArraySize,
+            indexSizePerMesh,
+            vertexSizePerMesh,
             objectsArraySize,
             materialsArraySize,
             bvhNodeArraySize,
@@ -488,22 +489,22 @@ const initCompute = async () => {
     for (const o of objects) {
         storage.set(o.index, storageOffset + o.indexOffset)
     }
-    storageOffset += meshArraySize
+    storageOffset += objectsArraySize * indexSizePerMesh
 
     for (const o of objects) {
         storage.set(o.position, storageOffset + 3 * o.vertexOffset)
     }
-    storageOffset += meshArraySize
+    storageOffset += objectsArraySize * 3 * vertexSizePerMesh
 
     for (const o of objects) {
         storage.set(o.normal, storageOffset + 3 * o.vertexOffset)
     }
-    storageOffset += meshArraySize
+    storageOffset += objectsArraySize * 3 * vertexSizePerMesh
 
     for (const o of objects) {
         storage.set(o.uv, storageOffset + 2 * o.vertexOffset)
     }
-    storageOffset += meshArraySize
+    storageOffset += objectsArraySize * 2 * vertexSizePerMesh
 
     const bvhNodeArray: number[] = []
     const bvhTriangleArray: number[] = []
@@ -543,9 +544,9 @@ const initCompute = async () => {
     if (bvhNodeArray.length > bvhNodeSize * bvhNodeArraySize) throw Error('storage overflow')
     storage.set(bvhNodeArray, storageOffset)
     storageOffset += bvhNodeSize * bvhNodeArraySize
-    if (bvhTriangleArray.length > meshArraySize) throw Error('storage overflow')
+    if (bvhTriangleArray.length > objectsArraySize * indexSizePerMesh) throw Error('storage overflow')
     storage.set(bvhTriangleArray, storageOffset)
-    storageOffset += meshArraySize
+    storageOffset += objectsArraySize * indexSizePerMesh
 
     let objectOffset = 0
     for (const o of objects) {
