@@ -133,7 +133,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var color = vec3f(ambientColor);
     var emission = 0.;
     var ray = rayStart;
-    var ior = 1.;
 
     for (var bounce = 0u; bounce < maxBounces + 1; bounce++) {
         let rayCast = castRay(ray);
@@ -159,18 +158,10 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 cosIncidence *= -1;
             }
 
-            var iorFrom: f32;
-            var iorTo: f32;
-            if outsideIn {
-                iorFrom = ior;
-                iorTo = material.ior;
-            } else {
-                iorFrom = material.ior;
-                // TODO: what if flying out into another object?
-                iorTo = 1;
-            }
+            let iorFrom = select(material.ior, 1., outsideIn);
+            let iorTo = select(1., material.ior, outsideIn);
 
-            let nonMetalReflectance = 0.08;
+            let nonMetalReflectance = 0.05;
             let colorDiffuse = material.baseColor.rgb;
             // TODO: colorSpecular from material
             // TODO: more science
@@ -206,13 +197,11 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                         bouncesSpecular++;
                         color *= colorSpecular;
                         dir = lerp3(reflection, scatter, material.roughness);
-                        ior = iorFrom;
                     } else {
                         if bouncesTransmission >= maxBouncesTransmission { break; }
                         bouncesTransmission++;
                         color *= .5 * (1 + colorSpecular);
                         dir = lerp3(refraction.xyz, scatter, material.roughness);
-                        ior = iorTo;
                     }
                 } else {
                     if bouncesDiffuse >= maxBouncesDiffuse { break; }
