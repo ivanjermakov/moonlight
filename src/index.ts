@@ -71,26 +71,16 @@ export const maxBounces = 16
 export const maxBouncesDiffuse = 4
 export const maxBouncesSpecular = 4
 export const maxBouncesTransmission = 12
-export const samplesPerPass = 4
-export const timeLimit: number | undefined = 120e3
-export const debugOverlay = false
-
-export const workgroupSize = [8, 8]
-export const computeOutputTextureSize = 4096
-export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-export const objectsArraySize = 1024
-export const meshArraySize = objectsArraySize * 256
-export const materialsArraySize = 1024
-export const sceneObjectSize = 16
-export const sceneMaterialSize = 12
-export const bvhNodeSize = 8
-export const bvhDepth = 32
-export const bvhNodeArraySize = objectsArraySize * 256
+export const samplesPerPass = 1
 /*
  * Maximum number of BVH cuts per axis to consider when splitting
- * Weighed by vertex count
+ * Weighed by object count
  */
 export const bvhSplitAccuracy = 4
+
+export const timeLimit: number | undefined = 4e3
+export const debugOverlay = false
+
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
 export type SceneName =
     | 'cornell-box'
@@ -104,6 +94,19 @@ export type SceneName =
     | 'refraction'
     | 'refraction-foreground'
 export const sceneName: SceneName = 'cornell-box'
+export const workgroupSize = [8, 8]
+export const computeOutputTextureSize = 4096
+export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
+export const objectsArraySize = 1024
+export const indexSize = 2048
+export const meshArraySize = objectsArraySize * indexSize
+export const materialsArraySize = 1024
+export const sceneObjectSize = 16
+export const sceneMaterialSize = 12
+export const cameraSize = 24
+export const bvhNodeSize = 8
+export const bvhDepth = 32
+export const bvhNodeArraySize = objectsArraySize * 512
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
