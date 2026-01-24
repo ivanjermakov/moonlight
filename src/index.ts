@@ -93,7 +93,7 @@ export type SceneName =
     | 'highlight-desaturation'
     | 'refraction'
     | 'refraction-foreground'
-export const sceneName: SceneName = 'cornell-box'
+export const sceneName: SceneName = 'primaries-sweep'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -107,6 +107,7 @@ export const cameraSize = 24
 export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 512
+export const sceneBvhNodeArraySize = 2 * objectsArraySize
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -415,6 +416,7 @@ const initCompute = async () => {
             objectsArraySize,
             materialsArraySize,
             bvhNodeArraySize,
+            sceneBvhNodeArraySize,
             bvhDepth,
             maxBounces,
             maxBouncesDiffuse,
@@ -522,7 +524,7 @@ const initCompute = async () => {
             sceneBvhObjectArray.push(...node.index)
         }
     }
-    const sceneBvhNodeTypedArray = new Float32Array(bvhNodeSize * objectsArraySize)
+    const sceneBvhNodeTypedArray = new Float32Array(bvhNodeSize * sceneBvhNodeArraySize)
     sceneBvhNodeTypedArray.set(sceneBvhNodeArray)
     const sceneBvhObjectTypedArray = new Float32Array(objectsArraySize)
     sceneBvhObjectTypedArray.set(sceneBvhObjectArray)
