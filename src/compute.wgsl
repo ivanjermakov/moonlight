@@ -210,7 +210,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                     } else {
                         if bouncesTransmission >= maxBouncesTransmission { break; }
                         bouncesTransmission++;
-                        color *= colorSpecular;
+                        color *= .5 * (1 + colorSpecular);
                         dir = lerp3(refraction.xyz, scatter, material.roughness);
                         ior = iorTo;
                     }
