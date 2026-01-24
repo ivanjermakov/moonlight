@@ -28,12 +28,13 @@ fn mainFragment(vout: VertexOut) -> @location(0) vec4f {
     let color = textureSample(computeTexture, computeSampler, uv);
 
     if debugOverlay {
-        if color.a > 1 {
-            return vec4f(color.a, 0, 0, 1);
-        } else if color.a > .5 {
-            return vec4f(color.a, color.a, 0, 1);
+        let v = color.a;
+        if v > 1 {
+            return vec4f(v, 0, 0, 1);
+        } else if v > .5 {
+            return vec4f(1, 1, 1 - (v * 2 - 1), 1);
         } else {
-            return vec4f(vec3f(color.a), 1);
+            return vec4f(vec3f(v), 1);
         }
     } else {
         let exposure = 1.;
