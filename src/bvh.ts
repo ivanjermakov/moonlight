@@ -1,5 +1,5 @@
 import { Box3, Triangle, Vector3 } from 'three'
-import { SceneObject, bvhDepth, bvhSplitAccuracy } from '.'
+import { SceneObject, bvhDepth } from '.'
 
 export const axes = ['x', 'y', 'z'] as const
 export const axisIndex = {
@@ -33,7 +33,7 @@ export type SplitResult = {
     cost: number
 }
 
-export const buildBvhTris = (object: SceneObject): BvhNode => {
+export const buildBvhTris = (object: SceneObject, splitAccuracy: number): BvhNode => {
     const boxes = object.triangles.map(t => new Box3().setFromPoints([t.a, t.b, t.c]))
     const indexer = (i: number) => boxes[i]
     const triangleIdxs = Array(object.indexCount / 3)
@@ -44,10 +44,10 @@ export const buildBvhTris = (object: SceneObject): BvhNode => {
         type: 'leaf',
         index: triangleIdxs
     }
-    return splitBvh(root, indexer, 0)
+    return splitBvh(root, indexer, splitAccuracy, 0)
 }
 
-export const buildBvhObjects = (objects: SceneObject[]): BvhNode => {
+export const buildBvhObjects = (objects: SceneObject[], splitAccuracy: number): BvhNode => {
     const indexer = (i: number) => objects[i].boundingBox
     const objectIdxs = Array(objects.length)
         .fill(0)
@@ -57,13 +57,17 @@ export const buildBvhObjects = (objects: SceneObject[]): BvhNode => {
         type: 'leaf',
         index: objectIdxs
     }
-    return splitBvh(root, indexer, 0)
+    return splitBvh(root, indexer, splitAccuracy, 0)
 }
 
 /**
  * For further optimization, consider binning https://jacco.ompf2.com/2022/04/21/how-to-build-a-bvh-part-3-quick-builds/
  */
-export const optimalSplit = (node: BvhNode, indexer: (i: number) => Box3): SplitResult | undefined => {
+export const optimalSplit = (
+    node: BvhNode,
+    indexer: (i: number) => Box3,
+    splitAccuracy: number
+): SplitResult | undefined => {
     if (node.type === 'node') throw Error()
     let best: SplitResult | undefined = undefined
     const vertCount = node.index.length
@@ -73,7 +77,7 @@ export const optimalSplit = (node: BvhNode, indexer: (i: number) => Box3): Split
         const axisStart = node.box.min[splitAxis]
         // check less slices per vertex when BVH node's vertex count is high
         // https://www.desmos.com/calculator/5lwf9tbwym
-        const accuracy = bvhSplitAccuracy / (vertCount + bvhSplitAccuracy)
+        const accuracy = splitAccuracy / (vertCount + splitAccuracy)
         const cuts = Math.ceil(vertCount * accuracy)
         for (let cut = 0; cut < cuts; cut++) {
             const splitPoint = axisStart + axisLength * (cut / cuts)
@@ -108,7 +112,12 @@ export const optimalSplit = (node: BvhNode, indexer: (i: number) => Box3): Split
     return best
 }
 
-export const splitBvh = (node: BvhNode, indexer: (i: number) => Box3, depth: number): BvhNode => {
+export const splitBvh = (
+    node: BvhNode,
+    indexer: (i: number) => Box3,
+    splitAccuracy: number,
+    depth: number
+): BvhNode => {
     if (depth >= bvhDepth) {
         console.warn('hit the bvh depth limit', node, depth)
         return node
@@ -122,7 +131,7 @@ export const splitBvh = (node: BvhNode, indexer: (i: number) => Box3, depth: num
         right: undefined as any
     }
 
-    const split = optimalSplit(node, indexer)
+    const split = optimalSplit(node, indexer, splitAccuracy)
     if (!split) return node
 
     if (split.left.length > 0) {
@@ -131,7 +140,7 @@ export const splitBvh = (node: BvhNode, indexer: (i: number) => Box3, depth: num
             type: 'leaf',
             index: split.left
         }
-        nodeNew.left = splitBvh(left, indexer, depth + 1)
+        nodeNew.left = splitBvh(left, indexer, splitAccuracy, depth + 1)
     }
     if (split.right.length > 0) {
         const right: BvhNode = {
@@ -139,7 +148,7 @@ export const splitBvh = (node: BvhNode, indexer: (i: number) => Box3, depth: num
             type: 'leaf',
             index: split.right
         }
-        nodeNew.right = splitBvh(right, indexer, depth + 1)
+        nodeNew.right = splitBvh(right, indexer, splitAccuracy, depth + 1)
     }
     if (!nodeNew.left || node.index.length === split.right.length) return nodeNew.right!
     if (!nodeNew.right || node.index.length === split.left.length) return nodeNew.left!

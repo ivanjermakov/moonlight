@@ -78,7 +78,8 @@ export const samplesPerPass = 1
  * Maximum number of BVH cuts per axis to consider when splitting
  * Weighed by object count
  */
-export const bvhSplitAccuracy = 4
+export const bvhSplitAccuracy = 16
+export const sceneBvhSplitAccuracy = 2048
 
 export const timeLimit: number | undefined = 120e3
 export const debugOverlay = false
@@ -419,7 +420,7 @@ const initScene = async () => {
             indexOffset += object.indexCount
             vertexOffset += object.vertexCount
             object.triangles = new Array(object.indexCount / 3).fill(0).map((_, i) => triangleByIndex(object, i))
-            object.bvh = buildBvhTris(object)
+            object.bvh = buildBvhTris(object, bvhSplitAccuracy)
             objects.push(object)
         }
         if (o instanceof PerspectiveCamera) {
@@ -434,7 +435,7 @@ const initScene = async () => {
             }
         }
     })
-    sceneBvh = buildBvhObjects(objects)
+    sceneBvh = buildBvhObjects(objects, sceneBvhSplitAccuracy)
 
     console.debug(objects)
     console.debug(materials)
