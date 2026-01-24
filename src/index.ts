@@ -101,7 +101,7 @@ export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 
 export const objectsArraySize = 1024
-export const indexSizePerMesh = 1024
+export const indexSizePerMesh = 2048
 export const vertexSizePerMesh = 2048
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
@@ -168,9 +168,11 @@ const main = async (): Promise<void> => {
     }
     formatCanvas = navigator.gpu.getPreferredCanvasFormat()
 
-    device = (await initDevice())!
-    if (!device) {
-        alert('no WebGPU device')
+    try {
+        device = (await initDevice())!
+    } catch (e) {
+        console.error(e)
+        alert(`WebGPU device request failed: ${e}`)
         return
     }
     console.debug(device)
@@ -339,7 +341,9 @@ const draw = () => {
 const initDevice = async (): Promise<GPUDevice | undefined> => {
     const adapter = await navigator.gpu.requestAdapter()
     if (!adapter) return undefined
-    return await adapter.requestDevice()
+    return await adapter.requestDevice({
+        requiredLimits: { maxBufferSize: storageSize * 4, maxStorageBufferBindingSize: storageSize * 4 }
+    })
 }
 
 const initScene = async () => {
@@ -636,7 +640,7 @@ const initCompute = async () => {
     if (storageOffset !== storageSize) throw Error(`storage size mismatch, ${storageOffset} != ${storageSize}`)
 
     const storageBuffer = device.createBuffer({
-        size: storage.length * 4,
+        size: storageSize * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     })
     device.queue.writeBuffer(storageBuffer, 0, storage)
