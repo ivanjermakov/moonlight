@@ -8,6 +8,7 @@ import {
     Mesh,
     MeshPhysicalMaterial,
     MeshStandardMaterial,
+    Object3D,
     PerspectiveCamera,
     Quaternion,
     Triangle
@@ -69,17 +70,17 @@ let sceneBvh!: BvhNode
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
 export const renderHeight = 1440 as number | 'dynamic'
-export const maxBounces = 16
-export const maxBouncesDiffuse = 4
+export const maxBounces = 8
+export const maxBouncesDiffuse = 2
 export const maxBouncesSpecular = 4
 export const maxBouncesTransmission = 12
 export const samplesPerPass = 1
 /*
  * Maximum number of BVH cuts per axis to consider when splitting
- * Weighed by object count
+ * TODO: experiment by normalizing accuracy by world size
  */
-export const bvhSplitAccuracy = 16
-export const sceneBvhSplitAccuracy = 2048
+export const bvhSplitAccuracy = 5
+export const sceneBvhSplitAccuracy = 512
 
 export const timeLimit: number | undefined = 120e3
 export const debugOverlay = false
@@ -103,8 +104,8 @@ export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 
 export const objectsArraySize = 1024
-export const indexSizePerMesh = 4096
-export const vertexSizePerMesh = 2048
+export const indexSizePerMesh = 8192
+export const vertexSizePerMesh = 4096
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
@@ -352,10 +353,19 @@ const initScene = async () => {
     const gltfPath = `/${sceneName}.glb`
     const gltfData = await (await fetch(gltfPath)).arrayBuffer()
     const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
+    console.log(gltf)
 
+    const traverse = (object: Object3D) => {
+        const objs: Object3D[] = [object]
+        for (const child of object.children) {
+            objs.push(...traverse(child))
+        }
+        return objs
+    }
     let indexOffset = 0
     let vertexOffset = 0
-    gltf.scene.traverse(o => {
+    const objs = traverse(gltf.scene)
+    for (const o of objs) {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
             const material = o.material
 
@@ -386,34 +396,35 @@ const initScene = async () => {
             const normal = geometry.attributes.normal as BufferAttribute
             if (!geometry.index) {
                 console.warn('no index buffer', o)
-                return
+                continue
             }
             if (!geometry.attributes.uv) {
                 geometry.attributes.uv = new BufferAttribute(new Float32Array(position.count * 2), 2)
             }
             if (!(position.count === normal.count && position.count === geometry.attributes.uv.count)) {
                 console.warn('inconsistent buffer size', o)
-                return
+                continue
             }
             if (!geometry.boundingBox) {
                 console.warn('no bounding box', o)
-                return
+                continue
             }
 
+            const mat = o.matrixWorld
             const object: SceneObject = {
                 mesh: o,
                 index: geometry.index!.array as Uint16Array,
                 indexCount: geometry.index.count,
-                position: transformPointArray(position.array as Float32Array, o.matrixWorld),
+                position: transformPointArray(position.array as Float32Array, mat),
                 vertexCount: position.count,
-                normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
+                normal: transformDirArray(normal.array as Float32Array, mat),
                 uv: geometry.attributes.uv.array as Float32Array,
                 indexOffset,
                 vertexOffset,
                 triangles: [],
-                matrixWorld: o.matrixWorld,
+                matrixWorld: mat,
                 material: materialIndex,
-                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
+                boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(mat),
                 bvh: undefined as any,
                 bvhOffset: undefined as any,
                 bvhCount: undefined as any
@@ -435,9 +446,12 @@ const initScene = async () => {
                 focus: o.userData.focus_distance ?? 0
             }
         }
-    })
+    }
+    if (indexOffset > objectsArraySize * indexSizePerMesh) throw Error('overflow')
+    if (vertexOffset > objectsArraySize * 3 * vertexSizePerMesh) throw Error('overflow')
     sceneBvh = buildBvhObjects(objects, sceneBvhSplitAccuracy)
 
+    if (objects.length === 0) throw Error('no objects')
     console.debug(objects)
     console.debug(materials)
     console.debug(camera)

@@ -108,8 +108,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     for (var i = 0u; i < samplesPerPass; i++) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
-    // color.a = testCountTriangle / 1e2;
-    color.a = testCountAabb / 1e1;
+    color.a = testCountTriangle / .5e3;
+    // color.a = testCountAabb / 1e1;
     // color.a = bounceCount / maxBounces;
     color /= samplesPerPass;
 
