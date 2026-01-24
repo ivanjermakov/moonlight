@@ -27,7 +27,7 @@ export type SceneObject = {
     index: Uint16Array
     indexCount: number
     position: Float32Array
-    positionCount: number
+    vertexCount: number
     normal: Float32Array
     uv: Float32Array
     indexOffset: number
@@ -37,6 +37,8 @@ export type SceneObject = {
     material: number
     boundingBox: Box3
     bvh: BvhNode
+    bvhOffset: number
+    bvhCount: number
 }
 
 export type SceneMaterial = {
@@ -78,7 +80,7 @@ export const samplesPerPass = 1
  */
 export const bvhSplitAccuracy = 4
 
-export const timeLimit: number | undefined = 4e3
+export const timeLimit: number | undefined = 120e3
 export const debugOverlay = false
 
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
@@ -93,10 +95,11 @@ export type SceneName =
     | 'highlight-desaturation'
     | 'refraction'
     | 'refraction-foreground'
-export const sceneName: SceneName = 'primaries-sweep'
+export const sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
+
 export const objectsArraySize = 1024
 export const indexSize = 2048
 export const meshArraySize = objectsArraySize * indexSize
@@ -108,6 +111,30 @@ export const bvhNodeSize = 8
 export const bvhDepth = 32
 export const bvhNodeArraySize = objectsArraySize * 512
 export const sceneBvhNodeArraySize = 2 * objectsArraySize
+
+export const storageSize =
+    // index
+    meshArraySize +
+    // position
+    meshArraySize +
+    // normal
+    meshArraySize +
+    // uv
+    meshArraySize +
+    // bvhNode
+    bvhNodeSize * bvhNodeArraySize +
+    // bvhTriangle
+    meshArraySize +
+    // object
+    sceneObjectSize * objectsArraySize +
+    // material
+    sceneMaterialSize * materialsArraySize +
+    // sceneBvhNode
+    bvhNodeSize * sceneBvhNodeArraySize +
+    // sceneBvhObject
+    objectsArraySize +
+    cameraSize +
+    4
 
 let device: GPUDevice
 let canvas: HTMLCanvasElement
@@ -325,9 +352,7 @@ const initScene = async () => {
     gltf.scene.traverse(o => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
             const material = o.material
-            const geometry = o.geometry
-            const position = geometry.attributes.position as BufferAttribute
-            const normal = geometry.attributes.normal as BufferAttribute
+
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
@@ -349,12 +374,12 @@ const initScene = async () => {
                 }
                 materials.push(sceneMaterial)
             }
+
+            const geometry = o.geometry
+            const position = geometry.attributes.position as BufferAttribute
+            const normal = geometry.attributes.normal as BufferAttribute
             if (!geometry.index) {
                 console.warn('no index buffer', o)
-                return
-            }
-            if (!geometry.boundingBox) {
-                console.warn('no bounding box', o)
                 return
             }
             if (!geometry.attributes.uv) {
@@ -364,12 +389,17 @@ const initScene = async () => {
                 console.warn('inconsistent buffer size', o)
                 return
             }
+            if (!geometry.boundingBox) {
+                console.warn('no bounding box', o)
+                return
+            }
+
             const object: SceneObject = {
                 mesh: o,
                 index: geometry.index!.array as Uint16Array,
                 indexCount: geometry.index.count,
                 position: transformPointArray(position.array as Float32Array, o.matrixWorld),
-                positionCount: position.count,
+                vertexCount: position.count,
                 normal: transformDirArray(normal.array as Float32Array, o.matrixWorld),
                 uv: geometry.attributes.uv.array as Float32Array,
                 indexOffset,
@@ -378,11 +408,13 @@ const initScene = async () => {
                 matrixWorld: o.matrixWorld,
                 material: materialIndex,
                 boundingBox: o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld),
-                bvh: undefined as any
+                bvh: undefined as any,
+                bvhOffset: undefined as any,
+                bvhCount: undefined as any
             }
             indexOffset += object.indexCount
-            vertexOffset += object.positionCount
-            object.triangles = new Array(geometry.index.count / 3).fill(0).map((_, i) => triangleByIndex(object, i))
+            vertexOffset += object.vertexCount
+            object.triangles = new Array(object.indexCount / 3).fill(0).map((_, i) => triangleByIndex(object, i))
             object.bvh = buildBvhTris(object)
             objects.push(object)
         }
@@ -450,34 +482,53 @@ const initCompute = async () => {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    const indexArray = new Float32Array(meshArraySize)
-    const positionArray = new Float32Array(meshArraySize)
-    const normalArray = new Float32Array(meshArraySize)
-    const uvArray = new Float32Array(meshArraySize)
-    const objectsArray: number[] = []
+    const storage = new Float32Array(storageSize)
+    let storageOffset = 0
+
+    for (const o of objects) {
+        storage.set(o.index, storageOffset + o.indexOffset)
+    }
+    storageOffset += meshArraySize
+
+    for (const o of objects) {
+        storage.set(o.position, storageOffset + 3 * o.vertexOffset)
+    }
+    storageOffset += meshArraySize
+
+    for (const o of objects) {
+        storage.set(o.normal, storageOffset + 3 * o.vertexOffset)
+    }
+    storageOffset += meshArraySize
+
+    for (const o of objects) {
+        storage.set(o.uv, storageOffset + 2 * o.vertexOffset)
+    }
+    storageOffset += meshArraySize
+
     const bvhNodeArray: number[] = []
     const bvhTriangleArray: number[] = []
     for (const o of objects) {
-        indexArray.set(o.index, o.indexOffset)
-        positionArray.set(o.position, o.vertexOffset * 3)
-        normalArray.set(o.normal, o.vertexOffset * 3)
-        uvArray.set(o.uv, o.vertexOffset * 2)
-
-        const bvhNodeOffset = bvhNodeArray.length / bvhNodeSize
         const bvhNodes = traverseBfs(o.bvh)
-        for (let i = 0; i < bvhNodes.length; i++) {
-            const node = bvhNodes[i]
-            bvhNodeArray.push(
-                ...node.box.min.toArray(),
-                node.type === 'leaf' ? bvhTriangleArray.length : bvhNodeOffset + bvhNodes.indexOf(node.left),
-                ...node.box.max.toArray(),
-                node.type === 'leaf' ? node.index.length : 0
-            )
-            if (node.type === 'leaf') {
+        o.bvhOffset = bvhNodeArray.length / bvhNodeSize
+        o.bvhCount = bvhNodes.length
+        for (const node of bvhNodes) {
+            if (node.type === 'node') {
+                bvhNodeArray.push(
+                    ...node.box.min.toArray(),
+                    o.bvhOffset + bvhNodes.indexOf(node.left),
+                    ...node.box.max.toArray(),
+                    0
+                )
+            } else {
+                bvhNodeArray.push(
+                    ...node.box.min.toArray(),
+                    bvhTriangleArray.length,
+                    ...node.box.max.toArray(),
+                    node.index.length
+                )
                 bvhTriangleArray.push(...node.index)
             }
         }
-
         // const leafTris = bvhNodes
         //     .filter(l => l.type === 'leaf')
         //     .map(l => l.index.length)
@@ -488,73 +539,84 @@ const initCompute = async () => {
         //     mean: leafTris[Math.floor(leafTris.length / 2)],
         //     avg: leafTris.reduce((a, b) => a + b, 0) / leafTris.length
         // })
-
-        objectsArray.push(
-            ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
-            o.indexOffset,
-            o.indexCount,
-            o.vertexOffset,
-            o.positionCount,
-            o.material,
-            bvhNodeOffset,
-            bvhNodes.length,
-            0
-        )
     }
-    const objectsTypedArray = new Float32Array(sceneObjectSize * objectsArraySize)
-    objectsTypedArray.set(objectsArray)
+    if (bvhNodeArray.length > bvhNodeSize * bvhNodeArraySize) throw Error('storage overflow')
+    storage.set(bvhNodeArray, storageOffset)
+    storageOffset += bvhNodeSize * bvhNodeArraySize
+    if (bvhTriangleArray.length > meshArraySize) throw Error('storage overflow')
+    storage.set(bvhTriangleArray, storageOffset)
+    storageOffset += meshArraySize
 
-    const bvhNodeTypedArray = new Float32Array(bvhNodeSize * bvhNodeArraySize)
-    bvhNodeTypedArray.set(bvhNodeArray)
-    const bvhTriangleTypedArray = new Float32Array(meshArraySize)
-    bvhTriangleTypedArray.set(bvhTriangleArray)
+    let objectOffset = 0
+    for (const o of objects) {
+        storage.set(
+            [
+                ...[...o.boundingBox.min.toArray(), 0, ...o.boundingBox.max.toArray(), 0],
+                o.indexOffset,
+                o.indexCount,
+                o.vertexOffset,
+                o.vertexCount,
+                o.material,
+                o.bvhOffset,
+                o.bvhCount,
+                0
+            ],
+            storageOffset + objectOffset
+        )
+        objectOffset += sceneObjectSize
+    }
+    if (objectOffset > sceneObjectSize * objectsArraySize) throw Error('storage overflow')
+    storageOffset += sceneObjectSize * objectsArraySize
+
+    let materialOffset = 0
+    for (const m of materials) {
+        storage.set(
+            [...m.baseColor.toArray(), 1, ...m.emissive, m.emissive.a, m.metallic, m.roughness, m.ior, m.transmission],
+            storageOffset + materialOffset
+        )
+        materialOffset += sceneMaterialSize
+    }
+    if (materialOffset > sceneMaterialSize * materialsArraySize) throw Error('storage overflow')
+    storageOffset += sceneMaterialSize * materialsArraySize
 
     const sceneBvhNodeArray: number[] = []
     const sceneBvhObjectArray: number[] = []
     const sceneBvhNodes = traverseBfs(sceneBvh)
     for (let i = 0; i < sceneBvhNodes.length; i++) {
         const node = sceneBvhNodes[i]
-        sceneBvhNodeArray.push(
-            ...node.box.min.toArray(),
-            node.type === 'leaf' ? sceneBvhObjectArray.length : sceneBvhNodes.indexOf(node.left),
-            ...node.box.max.toArray(),
-            node.type === 'leaf' ? node.index.length : 0
-        )
-        if (node.type === 'leaf') {
+        if (node.type === 'node') {
+            sceneBvhNodeArray.push(
+                ...node.box.min.toArray(),
+                sceneBvhNodes.indexOf(node.left),
+                ...node.box.max.toArray(),
+                0
+            )
+        } else {
+            sceneBvhNodeArray.push(
+                ...node.box.min.toArray(),
+                sceneBvhObjectArray.length,
+                ...node.box.max.toArray(),
+                node.index.length
+            )
             sceneBvhObjectArray.push(...node.index)
         }
     }
-    const sceneBvhNodeTypedArray = new Float32Array(bvhNodeSize * sceneBvhNodeArraySize)
-    sceneBvhNodeTypedArray.set(sceneBvhNodeArray)
-    const sceneBvhObjectTypedArray = new Float32Array(objectsArraySize)
-    sceneBvhObjectTypedArray.set(sceneBvhObjectArray)
-
-    const leafObjects = sceneBvhNodes
-        .filter(l => l.type === 'leaf')
-        .map(l => l.index.length)
-        .toSorted((a, b) => a - b)
-    console.debug('scene bvh', {
-        min: leafObjects.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
-        max: leafObjects.reduce((a, b) => (b > a ? b : a), 0),
-        mean: leafObjects[Math.floor(leafObjects.length / 2)],
-        avg: leafObjects.reduce((a, b) => a + b, 0) / leafObjects.length
-    })
-
-    const materialsArray: number[] = []
-    for (const m of materials) {
-        materialsArray.push(
-            ...m.baseColor.toArray(),
-            1,
-            ...m.emissive,
-            m.emissive.a,
-            m.metallic,
-            m.roughness,
-            m.ior,
-            m.transmission
-        )
-    }
-    const materialsTypedArray = new Float32Array(sceneMaterialSize * materialsArraySize)
-    materialsTypedArray.set(materialsArray)
+    // const leafObjects = sceneBvhNodes
+    //     .filter(l => l.type === 'leaf')
+    //     .map(l => l.index.length)
+    //     .toSorted((a, b) => a - b)
+    // console.debug('scene bvh', {
+    //     min: leafObjects.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
+    //     max: leafObjects.reduce((a, b) => (b > a ? b : a), 0),
+    //     mean: leafObjects[Math.floor(leafObjects.length / 2)],
+    //     avg: leafObjects.reduce((a, b) => a + b, 0) / leafObjects.length
+    // })
+    if (sceneBvhNodeArray.length > bvhNodeSize * sceneBvhNodeArraySize) throw Error('storage overflow')
+    storage.set(sceneBvhNodeArray, storageOffset)
+    storageOffset += bvhNodeSize * sceneBvhNodeArraySize
+    if (sceneBvhObjectArray.length > objectsArraySize) throw Error('storage overflow')
+    storage.set(sceneBvhObjectArray, storageOffset)
+    storageOffset += objectsArraySize
 
     const cameraArray = [
         ...camera.matrixWorld.toArray(),
@@ -564,31 +626,19 @@ const initCompute = async () => {
         camera.focus,
         camera.fstop
     ]
+    storage.set(cameraArray, storageOffset)
+    storageOffset += cameraSize
 
-    // TODO: optimize, too much copying
-    const storageBufferArray = [
-        ...indexArray,
-        ...positionArray,
-        ...normalArray,
-        ...uvArray,
-        ...bvhNodeTypedArray,
-        ...bvhTriangleTypedArray,
-        ...objectsTypedArray,
-        ...materialsTypedArray,
-        ...sceneBvhNodeTypedArray,
-        ...sceneBvhObjectTypedArray,
-        ...cameraArray,
-        objects.length,
-        0,
-        0,
-        0
-    ]
+    storage.set([objects.length, 0, 0, 0], storageOffset)
+    storageOffset += 4
+
+    if (storageOffset !== storageSize) throw Error(`storage size mismatch, ${storageOffset} != ${storageSize}`)
 
     const storageBuffer = device.createBuffer({
-        size: storageBufferArray.length * 4,
+        size: storage.length * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     })
-    device.queue.writeBuffer(storageBuffer, 0, new Float32Array(storageBufferArray))
+    device.queue.writeBuffer(storageBuffer, 0, storage)
 
     computeOutputTexture = device.createTexture({
         size: [computeOutputTextureSize, computeOutputTextureSize, 1],

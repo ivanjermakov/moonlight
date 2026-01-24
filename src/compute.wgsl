@@ -31,7 +31,7 @@ struct SceneObject {
     material: f32,
     bvhOffset: f32,
     bvhCount: f32,
-    p3: f32,
+    p1: f32,
 }
 
 struct SceneMaterial {
@@ -109,8 +109,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         color += vec4f(traceRay(pixelPos, cameraRay), 0);
     }
     // color.a = testCountTriangle / 1e2;
-    // color.a = testCountAabb / 2e2;
-    color.a = bounceCount / maxBounces;
+    color.a = testCountAabb / 1e1;
+    // color.a = bounceCount / maxBounces;
     color /= samplesPerPass;
 
     if uniforms.frame == 0 {
