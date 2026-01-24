@@ -91,6 +91,7 @@ export type SceneName =
     | 'rough-metallic'
     | 'caustics'
     | 'glass'
+    | 'aquarium'
     | 'dof'
     | 'additive-light'
     | 'primaries-sweep'
@@ -98,7 +99,7 @@ export type SceneName =
     | 'refraction'
     | 'refraction-foreground'
     | 'cozy-kitchen'
-export const sceneName: SceneName = 'cozy-kitchen'
+export const sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
