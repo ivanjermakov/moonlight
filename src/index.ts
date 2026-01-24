@@ -96,13 +96,14 @@ export type SceneName =
     | 'highlight-desaturation'
     | 'refraction'
     | 'refraction-foreground'
-export const sceneName: SceneName = 'cornell-box'
+    | 'cozy-kitchen'
+export const sceneName: SceneName = 'cozy-kitchen'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 
 export const objectsArraySize = 1024
-export const indexSizePerMesh = 2048
+export const indexSizePerMesh = 4096
 export const vertexSizePerMesh = 2048
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
@@ -110,7 +111,7 @@ export const sceneMaterialSize = 12
 export const cameraSize = 24
 export const bvhNodeSize = 8
 export const bvhDepth = 32
-export const bvhNodeArraySize = objectsArraySize * 512
+export const bvhNodeArraySize = objectsArraySize * indexSizePerMesh
 export const sceneBvhNodeArraySize = 2 * objectsArraySize
 
 export const storageSize =
@@ -539,7 +540,7 @@ const initCompute = async () => {
         //     .filter(l => l.type === 'leaf')
         //     .map(l => l.index.length)
         //     .toSorted((a, b) => a - b)
-        // console.debug('bvh', o.mesh.name, {
+        // console.debug('bvh', o.mesh.name, leafTris, {
         //     min: leafTris.reduce((a, b) => (b < a ? b : a), Number.POSITIVE_INFINITY),
         //     max: leafTris.reduce((a, b) => (b > a ? b : a), 0),
         //     mean: leafTris[Math.floor(leafTris.length / 2)],
