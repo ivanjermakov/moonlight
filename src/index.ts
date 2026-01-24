@@ -82,7 +82,7 @@ export const samplesPerPass = 1
 export const bvhSplitAccuracy = 5
 export const sceneBvhSplitAccuracy = 512
 
-export const timeLimit: number | undefined = 120e3
+export const timeLimit: number | undefined = 120 * 1e3
 export const debugOverlay = false
 
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
@@ -105,7 +105,7 @@ export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 
 export const objectsArraySize = 1024
 export const indexSizePerMesh = 8192
-export const vertexSizePerMesh = 4096
+export const vertexSizePerMesh = 8192
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 12
@@ -452,11 +452,9 @@ const initScene = async () => {
     sceneBvh = buildBvhObjects(objects, sceneBvhSplitAccuracy)
 
     if (objects.length === 0) throw Error('no objects')
-    console.debug(objects)
-    console.debug(materials)
+    console.debug(Object.fromEntries(objects.map(o => [o.mesh.name, o])))
+    console.debug(Object.fromEntries(materials.map(m => [m.material.name, m])))
     console.debug(camera)
-    console.debug(objects.map(o => o.bvh))
-    console.debug(sceneBvh)
 }
 
 const initCompute = async () => {
