@@ -11,6 +11,7 @@ import {
     Object3D,
     PerspectiveCamera,
     Quaternion,
+    Texture,
     Triangle
 } from 'three'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -50,6 +51,7 @@ export type SceneMaterial = {
     roughness: number
     ior: number
     transmission: number
+    map: number
 }
 
 export type CameraConfig = {
@@ -64,6 +66,7 @@ export type CameraConfig = {
 
 const materials: SceneMaterial[] = []
 const objects: SceneObject[] = []
+const textures: Texture[] = [new Texture()]
 let camera!: CameraConfig
 let sceneBvh!: BvhNode
 
@@ -103,13 +106,14 @@ export const sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
+export const mapTextureSize = 1024
 
 export const objectsArraySize = 1024
 export const indexSizePerMesh = 8192
 export const vertexSizePerMesh = 8192
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
-export const sceneMaterialSize = 12
+export const sceneMaterialSize = 16
 export const cameraSize = 24
 export const bvhNodeSize = 8
 export const bvhDepth = 32
@@ -150,6 +154,7 @@ let resolution: [number, number]
 let computePipeline: GPUComputePipeline
 let computeAccTexture: GPUTexture
 let computeOutputTexture: GPUTexture
+let mapsTexture: GPUTexture
 let computeBindGroup: GPUBindGroup
 let uniformBuffer: GPUBuffer
 
@@ -214,10 +219,14 @@ const main = async (): Promise<void> => {
         }
     })
 
-    const start = performance.now()
+    let start = performance.now()
     await initScene()
     console.debug(`init scene in ${(performance.now() - start).toFixed()}ms`)
+
+    start = performance.now()
     await initCompute()
+    console.debug(`init compute in ${(performance.now() - start).toFixed()}ms`)
+
     await initRender()
 
     switch (runMode) {
@@ -370,6 +379,15 @@ const initScene = async () => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
             const material = o.material
 
+            let texture = 0
+            if (material.map) {
+                texture = textures.indexOf(material.map)
+                if (texture < 0) {
+                    texture = textures.length
+                    textures.push(material.map)
+                }
+            }
+
             let materialIndex = materials.findIndex(m => m.material.name === material.name)
             if (materialIndex < 0) {
                 materialIndex = materials.length
@@ -383,7 +401,8 @@ const initScene = async () => {
                     metallic: material.metalness,
                     roughness: material.roughness,
                     ior: 1,
-                    transmission: 0
+                    transmission: 0,
+                    map: texture
                 }
                 if (material instanceof MeshPhysicalMaterial) {
                     sceneMaterial.ior = material.ior
@@ -455,6 +474,7 @@ const initScene = async () => {
     if (objects.length === 0) throw Error('no objects')
     console.debug(Object.fromEntries(objects.map(o => [o.mesh.name, o])))
     console.debug(Object.fromEntries(materials.map(m => [m.material.name, m])))
+    console.debug(Object.fromEntries(textures.map(t => [t.name, t])))
     console.debug(camera)
 }
 
@@ -488,7 +508,13 @@ const initCompute = async () => {
             },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { format: computeOutputTextureFormat } },
             { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
+            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+            {
+                binding: 4,
+                visibility: GPUShaderStage.COMPUTE,
+                texture: { sampleType: 'float', viewDimension: '2d-array' }
+            },
+            { binding: 5, visibility: GPUShaderStage.COMPUTE, sampler: {} }
         ]
     })
 
@@ -501,6 +527,27 @@ const initCompute = async () => {
         size: 256,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
+
+    mapsTexture = device.createTexture({
+        size: { width: mapTextureSize, height: mapTextureSize, depthOrArrayLayers: Math.max(2, textures.length) },
+        dimension: '2d',
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+    })
+    for (let i = 0; i < textures.length; i++) {
+        const texture = textures[i]
+        if (!texture.source.data) continue
+        device.queue.copyExternalImageToTexture(
+            {
+                source: texture.source.data as ImageBitmap
+            },
+            {
+                texture: mapsTexture,
+                origin: { x: 0, y: 0, z: i }
+            },
+            { width: texture.width, height: texture.height }
+        )
+    }
 
     const storage = new Float32Array(storageSize)
     let storageOffset = 0
@@ -591,7 +638,20 @@ const initCompute = async () => {
     let materialOffset = 0
     for (const m of materials) {
         storage.set(
-            [...m.baseColor.toArray(), 1, ...m.emissive, m.emissive.a, m.metallic, m.roughness, m.ior, m.transmission],
+            [
+                ...m.baseColor.toArray(),
+                1,
+                ...m.emissive,
+                m.emissive.a,
+                m.metallic,
+                m.roughness,
+                m.ior,
+                m.transmission,
+                m.map,
+                0,
+                0,
+                0
+            ],
             storageOffset + materialOffset
         )
         materialOffset += sceneMaterialSize
@@ -672,13 +732,19 @@ const initCompute = async () => {
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     })
 
+    const sampler = device.createSampler({
+        addressModeU: 'repeat',
+        addressModeV: 'repeat',
+    })
     computeBindGroup = device.createBindGroup({
         layout,
         entries: [
             { binding: 0, resource: computeAccTexture.createView() },
             { binding: 1, resource: computeOutputTexture.createView() },
             { binding: 2, resource: uniformBuffer },
-            { binding: 3, resource: storageBuffer }
+            { binding: 3, resource: storageBuffer },
+            { binding: 4, resource: mapsTexture },
+            { binding: 5, resource: sampler }
         ]
     })
 }

@@ -9,3 +9,4 @@
 - [ ] Bloom
 - [ ] Artifacts on meshes containing polys
 - [ ] Fog
+- [ ] Respect glTF’s `DoubleSided` flag

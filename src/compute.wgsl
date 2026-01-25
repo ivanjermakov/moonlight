@@ -41,6 +41,10 @@ struct SceneMaterial {
     roughness: f32,
     ior: f32,
     transmission: f32,
+    map: f32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
 }
 
 struct Camera {
@@ -74,6 +78,7 @@ struct Intersection {
 struct RayCast {
     intersection: Intersection,
     normal: vec3f,
+    uv: vec2f,
     object: u32,
     face: u32,
     distance: f32,
@@ -94,6 +99,8 @@ var<private> bounceCount = 0.;
 @group(0) @binding(1) var out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> store: Storage;
+@group(0) @binding(4) var mapsTexture: texture_2d_array<f32>;
+@group(0) @binding(5) var mapsSampler: sampler;
 
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -162,7 +169,11 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let iorTo = select(1., material.ior, outsideIn);
 
             let nonMetalReflectance = 0.05;
-            let colorDiffuse = material.baseColor.rgb;
+            var colorDiffuse = material.baseColor.rgb;
+            if material.map > 0 {
+                // TODO: textures with size != mapTextureSize should respect size mapping
+                colorDiffuse = textureSampleLevel(mapsTexture, mapsSampler, rayCast.uv, u32(material.map), 0).rgb;
+            }
             // TODO: colorSpecular from material
             // TODO: more science
             let lightness = max(max(material.baseColor.r, material.baseColor.g), material.baseColor.b);
@@ -214,6 +225,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
         } else {
+            emission = ambientEmission;
             break;
         }
         if bounce == maxBounces {

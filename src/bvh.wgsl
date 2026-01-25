@@ -59,38 +59,49 @@ fn castRay(ray: Ray) -> RayCast {
                                 );
                             }
                             let intersection = intersectTriangle(ray, triangle);
-                            if intersection.hit {
-                                let d = distance(intersection.point, ray.origin);
-                                if d < rayCast.distance {
-                                    var triNormals: array<vec3f, 3>;
-                                    for (var v = 0u; v < 3; v++) {
-                                        let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
-                                        let vertIdxGlobal = 3 * (vertexOffset + vertIdx);
-                                        triNormals[v] = vec3f(
-                                            store.normal[vertIdxGlobal],
-                                            store.normal[vertIdxGlobal + 1],
-                                            store.normal[vertIdxGlobal + 2],
-                                        );
-                                    }
-                                    let u = intersection.uv.x;
-                                    let v = intersection.uv.y;
-                                    let normal = normalize(
-                                        triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
+                            if !intersection.hit {
+                                continue;
+                            }
+                            let u = intersection.uv.x;
+                            let v = intersection.uv.y;
+                            let d = distance(intersection.point, ray.origin);
+                            if d < rayCast.distance {
+                                var triNormals: array<vec3f, 3>;
+                                for (var v = 0u; v < 3; v++) {
+                                    let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
+                                    let vertIdxGlobal = 3 * (vertexOffset + vertIdx);
+                                    triNormals[v] = vec3f(
+                                        store.normal[vertIdxGlobal],
+                                        store.normal[vertIdxGlobal + 1],
+                                        store.normal[vertIdxGlobal + 2],
                                     );
-
-                                    if dot(normal, ray.dir) > 0 {
-                                        let material = store.materials[u32(object.material)];
-                                        if material.transmission == 0 {
-                                            continue;
-                                        }
-                                    }
-
-                                    rayCast.intersection = intersection;
-                                    rayCast.normal = normal;
-                                    rayCast.object = objectIdx;
-                                    rayCast.face = triangleIdx;
-                                    rayCast.distance = d;
                                 }
+                                let normal = normalize(
+                                    triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
+                                );
+                                if dot(normal, ray.dir) > 0 {
+                                    let material = store.materials[u32(object.material)];
+                                    if material.transmission == 0 {
+                                        continue;
+                                    }
+                                }
+
+                                var triUvs: array<vec2f, 3>;
+                                for (var v = 0u; v < 3; v++) {
+                                    let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
+                                    triUvs[v] = vec2f(
+                                        store.uv[2 * (vertexOffset + vertIdx)],
+                                        store.uv[2 * (vertexOffset + vertIdx) + 1],
+                                    );
+                                }
+                                let uv = triUvs[0] + (triUvs[1] - triUvs[0]) * u + (triUvs[2] - triUvs[0]) * v;
+
+                                rayCast.intersection = intersection;
+                                rayCast.normal = normal;
+                                rayCast.uv = uv;
+                                rayCast.object = objectIdx;
+                                rayCast.face = triangleIdx;
+                                rayCast.distance = d;
                             }
                         }
                     } else {
