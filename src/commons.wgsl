@@ -66,3 +66,11 @@ fn lerp3(a: vec3<f32>, b: vec3<f32>, t: f32) -> vec3<f32> {
 fn lerp4(a: vec4<f32>, b: vec4<f32>, t: f32) -> vec4<f32> {
     return a + t * (b - a);
 }
+
+fn equirectUv(dir: vec3f) -> vec2f {
+    let phi = atan2(dir.z, dir.x);
+    let u = (phi / (2 * pi)) + 5;
+    let theta = asin(clamp(dir.y, -1, 1));
+    let v = .5 - (theta / pi);
+    return vec2f(u, v);
+}

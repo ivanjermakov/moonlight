@@ -14,6 +14,7 @@ import {
     Texture,
     Triangle
 } from 'three'
+import * as exrLoader from 'three/examples/jsm/loaders/EXRLoader.js'
 import * as gltfLoader from 'three/examples/jsm/loaders/GLTFLoader.js'
 import Color4 from 'three/src/renderers/common/Color4.js'
 import { BvhNode, buildBvhObjects, buildBvhTris, traverseBfs, triangleByIndex } from './bvh'
@@ -69,6 +70,7 @@ const objects: SceneObject[] = []
 const textures: Texture[] = [new Texture()]
 let camera!: CameraConfig
 let sceneBvh!: BvhNode
+let textureEnv: exrLoader.EXR | undefined
 
 export const renderScale = 1 / 1
 export const aspectRatio = 16 / 9
@@ -102,11 +104,13 @@ export type SceneName =
     | 'refraction'
     | 'refraction-foreground'
     | 'cozy-kitchen'
-export const sceneName: SceneName = 'cornell-box'
+    | 'texture'
+export const sceneName: SceneName = 'aquarium'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
 export const mapTextureSize = 1024
+export const envTextureSize = 2048
 
 export const objectsArraySize = 1024
 export const indexSizePerMesh = 8192
@@ -154,7 +158,6 @@ let resolution: [number, number]
 let computePipeline: GPUComputePipeline
 let computeAccTexture: GPUTexture
 let computeOutputTexture: GPUTexture
-let mapsTexture: GPUTexture
 let computeBindGroup: GPUBindGroup
 let uniformBuffer: GPUBuffer
 
@@ -363,7 +366,7 @@ const initScene = async () => {
     const gltfPath = `/${sceneName}.glb`
     const gltfData = await (await fetch(gltfPath)).arrayBuffer()
     const gltf = await new gltfLoader.GLTFLoader().parseAsync(gltfData, gltfPath)
-    console.log(gltf)
+    console.debug(gltf)
 
     const traverse = (object: Object3D) => {
         const objs: Object3D[] = [object]
@@ -471,6 +474,13 @@ const initScene = async () => {
     if (vertexOffset > objectsArraySize * 3 * vertexSizePerMesh) throw Error('overflow')
     sceneBvh = buildBvhObjects(objects, sceneBvhSplitAccuracy)
 
+    const mapEnv = camera.camera.userData.map_env
+    if (mapEnv) {
+        const res = await fetch(mapEnv)
+        const array = await res.arrayBuffer()
+        textureEnv = new exrLoader.EXRLoader().parse(array)
+    }
+
     if (objects.length === 0) throw Error('no objects')
     console.debug(Object.fromEntries(objects.map(o => [o.mesh.name, o])))
     console.debug(Object.fromEntries(materials.map(m => [m.material.name, m])))
@@ -514,7 +524,12 @@ const initCompute = async () => {
                 visibility: GPUShaderStage.COMPUTE,
                 texture: { sampleType: 'float', viewDimension: '2d-array' }
             },
-            { binding: 5, visibility: GPUShaderStage.COMPUTE, sampler: {} }
+            {
+                binding: 5,
+                visibility: GPUShaderStage.COMPUTE,
+                texture: { sampleType: 'float' }
+            },
+            { binding: 6, visibility: GPUShaderStage.COMPUTE, sampler: {} }
         ]
     })
 
@@ -528,7 +543,7 @@ const initCompute = async () => {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    mapsTexture = device.createTexture({
+    const mapsTexture = device.createTexture({
         size: { width: mapTextureSize, height: mapTextureSize, depthOrArrayLayers: Math.max(2, textures.length) },
         dimension: '2d',
         format: 'rgba8unorm',
@@ -549,6 +564,20 @@ const initCompute = async () => {
         )
     }
 
+    const envTexture = device.createTexture({
+        size: { width: envTextureSize, height: envTextureSize },
+        format: 'rgba16float',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+    })
+    if (textureEnv) {
+        device.queue.writeTexture(
+            { texture: envTexture, origin: [0, 0, 0] },
+            textureEnv.data.buffer,
+            // TODO: support env textures with width != envTextureSize
+            { bytesPerRow: envTextureSize * 2 * 4, rowsPerImage: envTextureSize / 2 },
+            { width: envTextureSize, height: envTextureSize / 2 }
+        )
+    }
     const storage = new Float32Array(storageSize)
     let storageOffset = 0
 
@@ -735,6 +764,8 @@ const initCompute = async () => {
     const sampler = device.createSampler({
         addressModeU: 'repeat',
         addressModeV: 'repeat',
+        magFilter: 'linear',
+        minFilter: 'linear'
     })
     computeBindGroup = device.createBindGroup({
         layout,
@@ -744,7 +775,8 @@ const initCompute = async () => {
             { binding: 2, resource: uniformBuffer },
             { binding: 3, resource: storageBuffer },
             { binding: 4, resource: mapsTexture },
-            { binding: 5, resource: sampler }
+            { binding: 5, resource: envTexture },
+            { binding: 6, resource: sampler }
         ]
     })
 }

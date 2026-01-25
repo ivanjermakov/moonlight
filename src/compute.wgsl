@@ -100,7 +100,8 @@ var<private> bounceCount = 0.;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> store: Storage;
 @group(0) @binding(4) var mapsTexture: texture_2d_array<f32>;
-@group(0) @binding(5) var mapsSampler: sampler;
+@group(0) @binding(5) var envTexture: texture_2d<f32>;
+@group(0) @binding(6) var textureSampler: sampler;
 
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -131,13 +132,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 
 fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
-    let ambientEmission = 0.;
-    let ambientColor = vec3f(1);
     var bouncesDiffuse = 0;
     var bouncesSpecular = 0;
     var bouncesTransmission = 0;
 
-    var color = vec3f(ambientColor);
+    var color = vec3f(1);
     var emission = 0.;
     var ray = rayStart;
 
@@ -172,7 +171,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             var colorDiffuse = material.baseColor.rgb;
             if material.map > 0 {
                 // TODO: textures with size != mapTextureSize should respect size mapping
-                colorDiffuse = textureSampleLevel(mapsTexture, mapsSampler, rayCast.uv, u32(material.map), 0).rgb;
+                colorDiffuse = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.map), 0).rgb;
             }
             // TODO: colorSpecular from material
             var colorSpecular = colorDiffuse;
@@ -226,11 +225,13 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
         } else {
-            emission = ambientEmission;
-            break;
+            var envMapUv = equirectUv(-ray.dir);
+            envMapUv.y *= .5;
+            let raw = textureSampleLevel(envTexture, textureSampler, envMapUv, 0).rgb;
+            return color * raw;
         }
         if bounce == maxBounces {
-            emission = ambientEmission;
+            emission = .1;
         }
         bounceCount += 1.;
     }
