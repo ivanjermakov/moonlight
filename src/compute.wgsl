@@ -175,12 +175,13 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 colorDiffuse = textureSampleLevel(mapsTexture, mapsSampler, rayCast.uv, u32(material.map), 0).rgb;
             }
             // TODO: colorSpecular from material
+            var colorSpecular = colorDiffuse;
             // TODO: more science
             let lightness = max(max(material.baseColor.r, material.baseColor.g), material.baseColor.b);
             let colorSpecularNonMetal = vec3f(min(nonMetalReflectance, lightness));
-            let colorSpecular = lerp3(
+            colorSpecular = lerp3(
                 colorSpecularNonMetal,
-                material.baseColor.rgb,
+                colorSpecular,
                 max(material.metallic, material.transmission)
             );
             let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
