@@ -109,7 +109,7 @@ export const sceneName: SceneName = 'aquarium'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
-export const mapTextureSize = 1024
+export const mapTextureSize = 2048
 export const envTextureSize = 2048
 
 export const objectsArraySize = 1024
@@ -552,15 +552,28 @@ const initCompute = async () => {
     for (let i = 0; i < textures.length; i++) {
         const texture = textures[i]
         if (!texture.source.data) continue
+
+        const oc = new OffscreenCanvas(mapTextureSize, mapTextureSize)
+        const ocCtx = oc.getContext('2d')!
+        ocCtx.drawImage(
+            texture.source.data as ImageBitmap,
+            0,
+            0,
+            texture.width,
+            texture.height,
+            0,
+            0,
+            mapTextureSize,
+            mapTextureSize
+        )
+
         device.queue.copyExternalImageToTexture(
-            {
-                source: texture.source.data as ImageBitmap
-            },
+            { source: oc.transferToImageBitmap() },
             {
                 texture: mapsTexture,
                 origin: { x: 0, y: 0, z: i }
             },
-            { width: texture.width, height: texture.height }
+            { width: mapTextureSize, height: mapTextureSize }
         )
     }
 

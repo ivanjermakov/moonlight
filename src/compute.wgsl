@@ -170,7 +170,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let nonMetalReflectance = 0.05;
             var colorDiffuse = material.baseColor.rgb;
             if material.map > 0 {
-                // TODO: textures with size != mapTextureSize should respect size mapping
                 colorDiffuse = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.map), 0).rgb;
                 // from srgb to linear
                 // TODO: move to common fn
