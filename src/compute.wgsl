@@ -173,6 +173,8 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 // TODO: textures with size != mapTextureSize should respect size mapping
                 colorDiffuse = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.map), 0).rgb;
             }
+            // from srgb to linear
+            colorDiffuse = pow(colorDiffuse, vec3f(2.2));
             // TODO: colorSpecular from material
             var colorSpecular = colorDiffuse;
             // TODO: more science
