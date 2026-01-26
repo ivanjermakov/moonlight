@@ -167,7 +167,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             let iorFrom = select(material.ior, 1., outsideIn);
             let iorTo = select(1., material.ior, outsideIn);
 
-            let nonMetalReflectance = 0.05;
             var colorDiffuse = material.baseColor.rgb;
             if material.map > 0 {
                 colorDiffuse = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.map), 0).rgb;
@@ -178,53 +177,50 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
             }
             // TODO: colorSpecular from material
             var colorSpecular = colorDiffuse;
-            // TODO: more science
-            let lightness = max(max(material.baseColor.r, material.baseColor.g), material.baseColor.b);
-            let colorSpecularNonMetal = vec3f(min(nonMetalReflectance, lightness));
-            colorSpecular = lerp3(
-                colorSpecularNonMetal,
-                colorSpecular,
-                max(material.metallic, material.transmission)
-            );
-            let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
-            let isReflection = clamp(max(material.metallic, reflectance), nonMetalReflectance, 1) > randomf();
-
             let reflection = ray.dir - 2 * cosIncidence * normal;
             var scatter = randomDir3();
             if dot(scatter, normal) < 0 {
                 scatter *= -1;
             }
-
+            let isMetallic = material.metallic > randomf();
             var dir: vec3f;
-            if isReflection {
+            if isMetallic {
                 if bouncesSpecular >= maxBouncesSpecular { break; }
                 bouncesSpecular++;
                 color *= colorSpecular;
                 dir = lerp3(reflection, scatter, material.roughness);
             } else {
-                let isTransmission = material.transmission > randomf();
-                if isTransmission {
-                    let refraction = refractionDirSnell(ray.dir, normal, cosIncidence, iorFrom, iorTo);
-                    let totalInternal = refraction.w == 0;
-                    if totalInternal {
-                        if bouncesSpecular >= maxBouncesSpecular { break; }
-                        bouncesSpecular++;
-                        color *= colorSpecular;
-                        dir = lerp3(reflection, scatter, material.roughness);
-                    } else {
-                        if bouncesTransmission >= maxBouncesTransmission { break; }
-                        bouncesTransmission++;
-                        color *= .5 * (1 + colorSpecular);
-                        dir = lerp3(refraction.xyz, scatter, material.roughness);
-                    }
+                let nonMetalReflectance = 0.04;
+                let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
+                let isReflection = max(nonMetalReflectance, reflectance) > randomf();
+                if isReflection {
+                    if bouncesSpecular >= maxBouncesSpecular { break; }
+                    bouncesSpecular++;
+                    dir = lerp3(reflection, scatter, material.roughness);
                 } else {
-                    if bouncesDiffuse >= maxBouncesDiffuse { break; }
-                    bouncesDiffuse++;
-                    color *= colorDiffuse;
-                    dir = scatter;
+                    let isTransmission = material.transmission > 0 && material.transmission > randomf();
+                    if isTransmission {
+                        let refraction = refractionDirSnell(ray.dir, normal, cosIncidence, iorFrom, iorTo);
+                        let totalInternal = refraction.w == 0;
+                        if totalInternal {
+                            if bouncesSpecular >= maxBouncesSpecular { break; }
+                            bouncesSpecular++;
+                            color *= colorSpecular;
+                            dir = lerp3(reflection, scatter, material.roughness);
+                        } else {
+                            if bouncesTransmission >= maxBouncesTransmission { break; }
+                            bouncesTransmission++;
+                            color *= .5 * (1 + colorSpecular);
+                            dir = lerp3(refraction.xyz, scatter, material.roughness);
+                        }
+                    } else {
+                        if bouncesDiffuse >= maxBouncesDiffuse { break; }
+                        bouncesDiffuse++;
+                        color *= colorDiffuse;
+                        dir = scatter;
+                    }
                 }
             }
-
 
             ray = Ray(rayCast.intersection.point, dir, 1 / dir);
         } else {
