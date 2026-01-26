@@ -176,7 +176,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 colorDiffuse = pow(colorDiffuse, vec3f(2.4));
             }
             // TODO: colorSpecular from material
-            var colorSpecular = colorDiffuse;
+            let colorSpecular = colorDiffuse;
             let reflection = ray.dir - 2 * cosIncidence * normal;
             var scatter = randomDir3();
             if dot(scatter, normal) < 0 {
@@ -210,7 +210,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                         } else {
                             if bouncesTransmission >= maxBouncesTransmission { break; }
                             bouncesTransmission++;
-                            color *= .5 * (1 + colorSpecular);
+                            color *= colorSpecular;
                             dir = lerp3(refraction.xyz, scatter, material.roughness);
                         }
                     } else {
