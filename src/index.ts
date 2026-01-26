@@ -96,6 +96,7 @@ export type SceneName =
     | 'rough-metallic'
     | 'caustics'
     | 'glass'
+    | 'drink'
     | 'aquarium'
     | 'dof'
     | 'additive-light'
@@ -486,6 +487,7 @@ const initScene = async () => {
     console.debug(Object.fromEntries(materials.map(m => [m.material.name, m])))
     console.debug(Object.fromEntries(textures.map(t => [t.name, t])))
     console.debug(camera)
+    console.debug(mapEnv)
 }
 
 const initCompute = async () => {
