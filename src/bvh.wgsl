@@ -79,11 +79,29 @@ fn castRay(ray: Ray) -> RayCast {
                                 let normal = normalize(
                                     triNormals[0] + (triNormals[1] - triNormals[0]) * u + (triNormals[2] - triNormals[0]) * v
                                 );
+
+                                let material = store.materials[u32(object.material)];
                                 if dot(normal, ray.dir) > 0 {
-                                    let material = store.materials[u32(object.material)];
                                     if material.transmission == 0 {
                                         continue;
                                     }
+                                }
+
+                                var tangent = vec4f();
+                                if (material.mapNormal > 0) {
+                                    var triTangents: array<vec4f, 3>;
+                                    for (var v = 0u; v < 3; v++) {
+                                        let vertIdx = u32(store.index[indexOffset + 3 * triangleIdx + v]);
+                                        triTangents[v] = vec4f(
+                                            store.tangent[4 * (vertexOffset + vertIdx)],
+                                            store.tangent[4 * (vertexOffset + vertIdx) + 1],
+                                            store.tangent[4 * (vertexOffset + vertIdx) + 2],
+                                            store.tangent[4 * (vertexOffset + vertIdx) + 3],
+                                        );
+                                    }
+                                    tangent = normalize(
+                                        triTangents[0] + (triTangents[1] - triTangents[0]) * u + (triTangents[2] - triTangents[0]) * v
+                                    );
                                 }
 
                                 var triUvs: array<vec2f, 3>;
@@ -98,6 +116,7 @@ fn castRay(ray: Ray) -> RayCast {
 
                                 rayCast.intersection = intersection;
                                 rayCast.normal = normal;
+                                rayCast.tangent = tangent;
                                 rayCast.uv = uv;
                                 rayCast.object = objectIdx;
                                 rayCast.face = triangleIdx;

@@ -7,6 +7,7 @@ struct Storage {
     position: array<f32, ${objectsArraySize} * 3 * ${vertexSizePerMesh}>,
     normal: array<f32, ${objectsArraySize} * 3 * ${vertexSizePerMesh}>,
     uv: array<f32, ${objectsArraySize} * 2 * ${vertexSizePerMesh}>,
+    tangent: array<f32, ${objectsArraySize} * 4 * ${vertexSizePerMesh}>,
     bvhNode: array<BvhNode, ${bvhNodeArraySize}>,
     // array of object-space triangle indices, indexed by bvhNode
     bvhTriangle: array<f32, ${objectsArraySize} * ${indexSizePerMesh}>,
@@ -42,7 +43,7 @@ struct SceneMaterial {
     ior: f32,
     transmission: f32,
     map: f32,
-    p1: f32,
+    mapNormal: f32,
     p2: f32,
     p3: f32,
 }
@@ -78,6 +79,7 @@ struct Intersection {
 struct RayCast {
     intersection: Intersection,
     normal: vec3f,
+    tangent: vec4f,
     uv: vec2f,
     object: u32,
     face: u32,
@@ -153,15 +155,27 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 break;
             }
 
-            let normalWorld = rayCast.normal;
+            var normalWorld = rayCast.normal;
+            if (material.mapNormal > 0) {
+                let tangent = normalize(rayCast.tangent.xyz);
+                let bitangent = normalize(cross(tangent, normalWorld) * rayCast.tangent.w);
+                let tbnMat = mat3x3f(tangent, bitangent, normalWorld);
+
+                var normalM = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.mapNormal), 0).rgb;
+                normalM = normalM * 2 - 1;
+                normalWorld = normalize(tbnMat * normalM);
+            }
+
             let cosIncidenceWorld = dot(ray.dir, normalWorld);
-            let outsideIn = cosIncidenceWorld < 0;
+            let outsideIn = dot(ray.dir, rayCast.normal) < 0;
 
             var normal = normalWorld;
             var cosIncidence = cosIncidenceWorld;
+            var offsetDir = 1.;
             if !outsideIn {
                 normal *= -1;
                 cosIncidence *= -1;
+                offsetDir *= -1;
             }
 
             let iorFrom = select(material.ior, 1., outsideIn);
@@ -212,6 +226,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                             bouncesTransmission++;
                             color *= colorSpecular;
                             dir = lerp3(refraction.xyz, scatter, material.roughness);
+                            offsetDir *= -1;
                         }
                     } else {
                         if bouncesDiffuse >= maxBouncesDiffuse { break; }
@@ -222,7 +237,7 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 }
             }
 
-            ray = Ray(rayCast.intersection.point, dir, 1 / dir);
+            ray = Ray(rayCast.intersection.point + offsetDir * epsilon * rayCast.normal, dir, 1 / dir);
         } else {
             var envMapUv = equirectUv(-ray.dir);
             envMapUv.y *= .5;

@@ -23,7 +23,7 @@ import commonsWgsl from './commons.wgsl?raw'
 import computeWgsl from './compute.wgsl?raw'
 import './index.css'
 import renderWgsl from './render.wgsl?raw'
-import { transformDirArray, transformPointArray } from './util'
+import { transformDir4Array, transformDirArray, transformPointArray } from './util'
 
 export type SceneObject = {
     mesh: Mesh
@@ -33,6 +33,7 @@ export type SceneObject = {
     vertexCount: number
     normal: Float32Array
     uv: Float32Array
+    tangent: Float32Array
     indexOffset: number
     vertexOffset: number
     triangles: Triangle[]
@@ -53,6 +54,7 @@ export type SceneMaterial = {
     ior: number
     transmission: number
     map: number
+    mapNormal: number
 }
 
 export type CameraConfig = {
@@ -106,8 +108,8 @@ export type SceneName =
     | 'dispersion-foreground'
     | 'cozy-kitchen'
     | 'texture'
-export const sceneName: SceneName = 'aquarium'
     | 'pbr'
+export const sceneName: SceneName = 'aquarium'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -135,6 +137,8 @@ export const storageSize =
     objectsArraySize * 3 * vertexSizePerMesh +
     // uv
     objectsArraySize * 2 * vertexSizePerMesh +
+    // tangent
+    objectsArraySize * 4 * vertexSizePerMesh +
     // bvhNode
     bvhNodeSize * bvhNodeArraySize +
     // bvhTriangle
@@ -384,16 +388,24 @@ const initScene = async () => {
         if (o instanceof Mesh && o.material instanceof MeshStandardMaterial && o.geometry instanceof BufferGeometry) {
             const material = o.material
 
-            let texture = 0
+            let map = 0
             if (material.map) {
-                texture = textures.indexOf(material.map)
-                if (texture < 0) {
-                    texture = textures.length
+                map = textures.indexOf(material.map)
+                if (map < 0) {
+                    map = textures.length
                     textures.push(material.map)
                 }
             }
+            let mapNormal = 0
+            if (material.normalMap) {
+                mapNormal = textures.indexOf(material.normalMap)
+                if (mapNormal < 0) {
+                    mapNormal = textures.length
+                    textures.push(material.normalMap)
+                }
+            }
 
-            let materialIndex = materials.findIndex(m => m.material.name === material.name)
+            let materialIndex = materials.findIndex(m => m.material === material)
             if (materialIndex < 0) {
                 materialIndex = materials.length
                 const sceneMaterial: SceneMaterial = {
@@ -407,7 +419,8 @@ const initScene = async () => {
                     roughness: material.roughness,
                     ior: 1,
                     transmission: 0,
-                    map: texture
+                    map,
+                    mapNormal
                 }
                 if (material instanceof MeshPhysicalMaterial) {
                     sceneMaterial.ior = material.ior
@@ -426,7 +439,16 @@ const initScene = async () => {
             if (!geometry.attributes.uv) {
                 geometry.attributes.uv = new BufferAttribute(new Float32Array(position.count * 2), 2)
             }
-            if (!(position.count === normal.count && position.count === geometry.attributes.uv.count)) {
+            if (!geometry.attributes.tangent) {
+                geometry.attributes.tangent = new BufferAttribute(new Float32Array(position.count * 4), 4)
+            }
+            if (
+                !(
+                    position.count === normal.count &&
+                    position.count === geometry.attributes.uv.count &&
+                    position.count === geometry.attributes.tangent.count
+                )
+            ) {
                 console.warn('inconsistent buffer size', o)
                 continue
             }
@@ -443,6 +465,7 @@ const initScene = async () => {
                 position: transformPointArray(position.array as Float32Array, mat),
                 vertexCount: position.count,
                 normal: transformDirArray(normal.array as Float32Array, mat),
+                tangent: transformDir4Array(geometry.attributes.tangent.array as Float32Array, mat),
                 uv: geometry.attributes.uv.array as Float32Array,
                 indexOffset,
                 vertexOffset,
@@ -617,6 +640,11 @@ const initCompute = async () => {
     }
     storageOffset += objectsArraySize * 2 * vertexSizePerMesh
 
+    for (const o of objects) {
+        storage.set(o.tangent, storageOffset + 4 * o.vertexOffset)
+    }
+    storageOffset += objectsArraySize * 4 * vertexSizePerMesh
+
     const bvhNodeArray: number[] = []
     const bvhTriangleArray: number[] = []
     for (const o of objects) {
@@ -693,7 +721,7 @@ const initCompute = async () => {
                 m.ior,
                 m.transmission,
                 m.map,
-                0,
+                m.mapNormal,
                 0,
                 0
             ],
