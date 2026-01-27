@@ -2,3 +2,5 @@ node_modules
 dist
 pnpm-lock.yaml
 resource/render
+public/*.gz
+public/*.glb
