@@ -109,8 +109,8 @@ export type SceneName =
     | 'cozy-kitchen'
     | 'texture'
     | 'pbr'
-export const sceneName: SceneName = 'aquarium'
     | 'white-furnace'
+export const sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'

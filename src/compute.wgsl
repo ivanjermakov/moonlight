@@ -138,7 +138,10 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
     var bouncesSpecular = 0;
     var bouncesTransmission = 0;
 
-    var color = vec3f(1);
+    let wavelength = lerp(400, 700, randomf());
+    // linearly picking wavelength does not produce pure white, requires correction
+    let whiteBalanceCorrection = 4.25 * vec3f(.68, .5, 1.);
+    var color = wavelengthToColor(wavelength) * whiteBalanceCorrection;
     var emission = 0.;
     var ray = rayStart;
 
@@ -178,8 +181,9 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 offsetDir *= -1;
             }
 
-            let iorFrom = select(material.ior, 1., outsideIn);
-            let iorTo = select(1., material.ior, outsideIn);
+            let ior = dynamicIorCauchy(material.ior, wavelength);
+            let iorFrom = select(ior, 1., outsideIn);
+            let iorTo = select(1., ior, outsideIn);
 
             var colorDiffuse = material.baseColor.rgb;
             if material.map > 0 {
@@ -392,4 +396,10 @@ fn refractionDirSnell(incident: vec3f, normal: vec3f, cosIncidence: f32, n1: f32
         let refracted = eta * incident + (eta * -cosIncidence - sqrt(k)) * normal;
         return vec4f(refracted, 1);
     }
+}
+
+// @see https://en.wikipedia.org/wiki/Cauchy's_equation
+fn dynamicIorCauchy(base: f32, wavelength: f32) -> f32 {
+    let b = .01 / pow(wavelength / 1000, 2);
+    return base + b;
 }
