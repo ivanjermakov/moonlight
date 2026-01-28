@@ -278,7 +278,7 @@ fn cameraRay(pixelPos: vec2f) -> Ray {
         return Ray(origin, dir, 1 / dir);
     } else {
         let focusPoint = dirLocal * store.camera.focus;
-        let dofStrength = (1 / store.camera.fstop) * (sensorSize.x / 1000);
+        let dofStrength = (2 / store.camera.fstop) * (sensorSize.x / 1000);
         let originLocal = vec3f(randomCircleSample() * dofStrength, 0);
         let dirLocal = normalize(focusPoint - originLocal);
         let origin = transformPoint(originLocal, store.camera.matrixWorld);
