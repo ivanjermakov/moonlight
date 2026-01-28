@@ -89,7 +89,7 @@ export const samplesPerPass = 1
 export const bvhSplitAccuracy = 5
 export const sceneBvhSplitAccuracy = 512
 
-export const timeLimit: number | undefined = 120 * 1e3
+export const timeLimit: number | undefined = 2 * 60 * 1e3
 export const debugOverlay = false
 
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'

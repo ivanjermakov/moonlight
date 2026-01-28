@@ -181,10 +181,6 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 offsetDir *= -1;
             }
 
-            let ior = dynamicIorCauchy(material.ior, wavelength);
-            let iorFrom = select(ior, 1., outsideIn);
-            let iorTo = select(1., ior, outsideIn);
-
             var colorDiffuse = material.baseColor.rgb;
             if material.map > 0 {
                 colorDiffuse = textureSampleLevel(mapsTexture, textureSampler, rayCast.uv, u32(material.map), 0).rgb;
@@ -208,6 +204,9 @@ fn traceRay(pixelPos: vec2f, rayStart: Ray) -> vec3f {
                 color *= colorSpecular;
                 dir = lerp3(reflection, scatter, material.roughness);
             } else {
+                let ior = dynamicIorCauchy(material.ior, wavelength);
+                let iorFrom = select(ior, 1., outsideIn);
+                let iorTo = select(1., ior, outsideIn);
                 let nonMetalReflectance = 0.04;
                 let reflectance = schlickFresnel(cosIncidence, iorFrom, iorTo);
                 let isReflection = max(nonMetalReflectance, reflectance) > randomf();
