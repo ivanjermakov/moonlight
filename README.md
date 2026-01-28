@@ -2,6 +2,23 @@
 
 WebGPU path tracer
 
+![preview](resource/preview.jpg)
+
+## Features
+
+- glTF scene import
+- direct and indirect lighting
+- metals and dielectrics
+- diffusion, reflection, refraction, transmission
+- texture (albedo) maps
+- normal maps
+- environment maps
+- dispersion
+- depth of field
+- ACES tone mapping
+- BVH of scene objects
+- BVH of object meshes
+
 ## glTF limitations
 
 Some scene features needed for full path tracer functionality are not present in glTF format.
