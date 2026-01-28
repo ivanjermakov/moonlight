@@ -110,6 +110,7 @@ export type SceneName =
     | 'texture'
     | 'pbr'
 export const sceneName: SceneName = 'aquarium'
+    | 'white-furnace'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
