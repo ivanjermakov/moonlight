@@ -93,24 +93,26 @@ export const timeLimit: number | undefined = 2 * 60 * 1e3
 export const debugOverlay = false
 
 export const runMode = 'busy' as 'vsync' | 'busy' | 'single'
-export type SceneName =
-    | 'cornell-box'
-    | 'rough-metallic'
-    | 'caustics'
-    | 'glass'
-    | 'drink'
-    | 'aquarium'
-    | 'dof'
-    | 'additive-light'
-    | 'primaries-sweep'
-    | 'highlight-desaturation'
-    | 'dispersion'
-    | 'dispersion-foreground'
-    | 'cozy-kitchen'
-    | 'texture'
-    | 'pbr'
-    | 'white-furnace'
-export const sceneName: SceneName = 'cornell-box'
+export const sceneNames = [
+    'cornell-box',
+    'rough-metallic',
+    'caustics',
+    'glass',
+    'drink',
+    'aquarium',
+    'dof',
+    'additive-light',
+    'primaries-sweep',
+    'highlight-desaturation',
+    'dispersion',
+    'dispersion-foreground',
+    'cozy-kitchen',
+    'texture',
+    'pbr',
+    'white-furnace'
+]
+export type SceneName = (typeof sceneNames)[number]
+let sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
 export const computeOutputTextureSize = 4096
 export const computeOutputTextureFormat: GPUTextureFormat = 'rgba32float'
@@ -158,6 +160,7 @@ export const storageSize =
 let device: GPUDevice
 let canvas: HTMLCanvasElement
 let info: HTMLElement
+let scenePicker: HTMLSelectElement
 let ctx: GPUCanvasContext
 let formatCanvas: GPUTextureFormat
 let resolution: [number, number]
@@ -167,6 +170,9 @@ let computeAccTexture: GPUTexture
 let computeOutputTexture: GPUTexture
 let computeBindGroup: GPUBindGroup
 let uniformBuffer: GPUBuffer
+let storageBuffer: GPUBuffer
+let mapsTexture: GPUTexture
+let envTexture: GPUTexture
 
 let renderPipeline: GPURenderPipeline
 let renderBindGroup: GPUBindGroup
@@ -180,6 +186,18 @@ let capture = false
 const main = async (): Promise<void> => {
     info = document.getElementById('info')!
     info.innerText = 'loading'
+    scenePicker = document.getElementById('scene-picker') as HTMLSelectElement
+    for (const sceneName of sceneNames) {
+        const option = document.createElement('option')
+        option.id = sceneName
+        option.innerText = sceneName
+        scenePicker.appendChild(option)
+    }
+    scenePicker.addEventListener('input', async e => {
+        sceneName = (e.target as HTMLSelectElement).value
+        await deinit()
+        await init()
+    })
 
     if (!navigator.gpu) {
         alert('WebGPU is not supported')
@@ -229,15 +247,7 @@ const main = async (): Promise<void> => {
         }
     })
 
-    let start = performance.now()
-    await initScene()
-    console.debug(`init scene in ${(performance.now() - start).toFixed()}ms`)
-
-    start = performance.now()
-    await initCompute()
-    console.debug(`init compute in ${(performance.now() - start).toFixed()}ms`)
-
-    await initRender()
+    await init()
 
     switch (runMode) {
         case 'vsync':
@@ -255,12 +265,33 @@ const main = async (): Promise<void> => {
     }
 }
 
+const init = async () => {
+    let start = performance.now()
+    await initScene()
+    console.debug(`init scene in ${(performance.now() - start).toFixed()}ms`)
+
+    start = performance.now()
+    await initCompute()
+    console.debug(`init compute in ${(performance.now() - start).toFixed()}ms`)
+
+    await initRender()
+}
+
+const deinit = async () => {
+    objects.length = 0
+    info.innerText = 'loading'
+    frame = -1
+    ;[uniformBuffer, storageBuffer].forEach(b => b.destroy())
+    ;[mapsTexture, envTexture, computeOutputTexture, computeAccTexture].forEach(t => t.destroy())
+}
+
 const loop = async () => {
     await update()
     requestAnimationFrame(loop)
 }
 
 const update = async () => {
+    if (objects.length === 0) return
     const start = performance.now()
     const lastFrameStart = frameStart
     frameStart = start
@@ -282,10 +313,10 @@ const update = async () => {
 
     await device.queue.onSubmittedWorkDone()
 
+    if (objects.length === 0) return
     const dt = start - lastFrameStart
     const dtps = dt / samplesPerPass
     info.innerText = [
-        sceneName,
         ['dt  ', dt.toFixed(1).padStart(6, ' '), dtps.toFixed(1).padStart(5, ' ')].join(' '),
         ['fps ', (1000 / dt).toFixed(1).padStart(6, ' '), (1000 / dtps).toFixed(1).padStart(5, ' ')].join(' '),
         ['smpl', (frame * samplesPerPass).toFixed().padStart(6, ' ')].join(' '),
@@ -570,7 +601,7 @@ const initCompute = async () => {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    const mapsTexture = device.createTexture({
+    mapsTexture = device.createTexture({
         size: { width: mapTextureSize, height: mapTextureSize, depthOrArrayLayers: Math.max(2, textures.length) },
         dimension: '2d',
         format: 'rgba8unorm',
@@ -604,7 +635,7 @@ const initCompute = async () => {
         )
     }
 
-    const envTexture = device.createTexture({
+    envTexture = device.createTexture({
         size: { width: envTextureSize, height: envTextureSize },
         format: 'rgba16float',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
@@ -788,7 +819,7 @@ const initCompute = async () => {
 
     if (storageOffset !== storageSize) throw Error(`storage size mismatch, ${storageOffset} != ${storageSize}`)
 
-    const storageBuffer = device.createBuffer({
+    storageBuffer = device.createBuffer({
         size: storageSize * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     })
