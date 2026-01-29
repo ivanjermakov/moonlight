@@ -110,7 +110,7 @@ export const sceneNames = [
     'texture',
     'pbr',
     'white-furnace'
-]
+] as const
 export type SceneName = (typeof sceneNames)[number]
 let sceneName: SceneName = 'cornell-box'
 export const workgroupSize = [8, 8]
@@ -120,8 +120,8 @@ export const mapTextureSize = 2048
 export const envTextureSize = 2048
 
 export const objectsArraySize = 1024
-export const indexSizePerMesh = 8192
-export const vertexSizePerMesh = 8192
+export const indexSizePerMesh = 4096
+export const vertexSizePerMesh = 512
 export const materialsArraySize = 1024
 export const sceneObjectSize = 16
 export const sceneMaterialSize = 16
@@ -189,12 +189,13 @@ const main = async (): Promise<void> => {
     scenePicker = document.getElementById('scene-picker') as HTMLSelectElement
     for (const sceneName of sceneNames) {
         const option = document.createElement('option')
-        option.id = sceneName
+        option.value = sceneName
         option.innerText = sceneName
         scenePicker.appendChild(option)
     }
+    scenePicker.value = sceneName
     scenePicker.addEventListener('input', async e => {
-        sceneName = (e.target as HTMLSelectElement).value
+        sceneName = (e.target as HTMLSelectElement).value as SceneName
         await deinit()
         await init()
     })

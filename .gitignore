@@ -1,6 +1,7 @@
 node_modules
 dist
 pnpm-lock.yaml
+.netlify
 resource/render
 public/*.gz
 public/*.glb
